@@ -1,7 +1,7 @@
 {
   "name": "purelab",
   "productName": "PureLab",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "PureLab — offline-first invoicing & POS for pharmaceutical and dermo-cosmetic sales",
   "author": "PureLab",
   "license": "UNLICENSED",
@@ -19,7 +19,8 @@
     "start": "npm run build:web && electron .",
     "dist:win": "npm run build:web && electron-builder --win --x64",
     "dist:dir": "npm run build:web && electron-builder --dir",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "test:rules": "npx -y firebase-tools@14 emulators:exec --only firestore --project demo-purelab \"node --test tests/rules/*.spec.js\""
   },
   "build": {
     "appId": "com.purelab.pos",
@@ -72,7 +73,7 @@
     "sql.js": "^1.16.0"
   },
   "devDependencies": {
-    "@supabase/supabase-js": "^2.119.0",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.6.2",
     "concurrently": "^9.2.5",
@@ -81,6 +82,7 @@
     "dexie-react-hooks": "^1.1.7",
     "electron": "^38.8.6",
     "electron-builder": "^26.18.0",
+    "firebase": "^12.19.0",
     "html5-qrcode": "^2.3.8",
     "postcss": "^8.5.33",
     "qrcode": "^1.5.4",

@@ -6,7 +6,7 @@ Offline-first invoicing and point-of-sale software for pharmaceutical and dermo-
 - **Camera barcode scanner:** EAN/UPC, Code 128/39, ITF, QR, and the **GS1 DataMatrix** on medicine packs (PureLab reads the GTIN, batch and expiry from it). It also works with USB keyboard-wedge scanners and with manual SKU or name search.
 - **Offline first:** every device keeps its own data in IndexedDB and works with no network.
 - **Desktop hub (LAN):** the desktop app runs a SQLite-backed sync server and serves the app to phones on the same Wi-Fi. Pairing is done by QR code, and no internet is needed.
-- **Cloud sync (Supabase):** used automatically whenever a device is online. A desktop connected to both the hub and the cloud passes data between them (phone → hub → cloud).
+- **Cloud sync (Firebase Firestore):** used automatically whenever a device is online. Only the owner and staff emails the owner approves can see the data. A desktop connected to both the hub and the cloud passes data between them (phone → hub → cloud).
 - **Inventory:** batches, expiry dates, reorder levels, and a stock ledger that never loses entries (adjustments, receipts, damaged or expired stock). Stock is deducted when an invoice is issued, and returned when an invoice is voided or edited.
 - **Customers:** pharmacies, clinics and retail customers, with credit limits, opening balances, live outstanding balances and purchase history.
 
@@ -51,7 +51,8 @@ purelab/
 │   ├── sync/
 │   │   ├── engine.js         # multi-remote push/pull sync engine
 │   │   ├── hubAdapter.js     # LAN hub adapter
-│   │   └── supabaseAdapter.js# Supabase adapter (RPC push + server_seq pull)
+│   │   ├── firebaseClient.js # lazy Firebase SDK, sign-in, ownership & team helpers
+│   │   └── firebaseAdapter.js# Firestore adapter (transactional LWW push + server-time pull)
 │   ├── lib/
 │   │   ├── calc.js           # invoice math (pure, unit-tested)
 │   │   ├── barcode.js        # GS1 parsing + EAN/UPC/GTIN candidate matching
@@ -67,7 +68,8 @@ purelab/
 │   └── pages/
 │       ├── Dashboard.jsx, InvoiceEditor.jsx (POS), InvoiceView.jsx, Invoices.jsx
 │       ├── Products.jsx, Customers.jsx, CustomerDetail.jsx, Settings.jsx, Pair.jsx
-├── supabase/schema.sql       # cloud tables, RLS, purelab_push() LWW merge function
+├── firestore.rules           # Firestore security rules (owner + approved staff, server-side LWW)
+├── firebase.json             # rules path + local emulator config
 └── tests/                    # node:test — invoice math, GS1, hub store/server
 ```
 
@@ -139,24 +141,45 @@ Phones keep working when the hub is out of reach, because sales are saved on the
 
 Browsers only allow camera access on HTTPS or `localhost`. If you open the `http://` address, the scanner falls back to typing the code by hand.
 
-## 5. Cloud sync (Supabase)
+## 5. Cloud sync (Firebase)
 
-1. Create a project at supabase.com. In **SQL Editor**, paste in `supabase/schema.sql` and run it.
-2. Under **Authentication → Users**, create a user for each staff member, or let them sign up from inside the app.
-3. In PureLab, go to **Settings → Cloud sync**. Enter the project URL and the anon (publishable) key, then sign in.
-4. Do this on every device that should sync through the cloud. Devices that only use the hub don't need it.
+One-time setup in the [Firebase console](https://console.firebase.google.com):
 
-To use the mobile web app over the internet instead of only on the LAN, deploy `dist/` (from `npm run build:web`) to any HTTPS static host, such as Netlify, Vercel, Render or Cloudflare Pages. On a trusted HTTPS address the service worker caches the app, so it also loads while offline.
+1. **Add project** (for example `purelab`). Google Analytics isn't needed.
+2. **Build → Authentication → Get started → Sign-in method → Email/Password → Enable.**
+3. **Build → Firestore Database → Create database.** Choose production mode and the region closest to you.
+4. **Firestore Database → Rules:** replace everything with the contents of [`firestore.rules`](firestore.rules), then click **Publish**.
+5. **Project settings (gear icon) → Your apps → Web (`</>`)**: register an app named "PureLab" and copy the `firebaseConfig` block.
+6. **Authentication → Settings → Authorized domains:** add the domain of the online version (for example `purelab.onrender.com`).
+
+Then connect PureLab:
+
+- Paste the config into `src/firebase.config.js` and push. Every build then connects automatically: the online version and the Windows installer.
+  Alternatively, paste it on each device in **Settings → Cloud**.
+- **The owner:** in **Settings → Cloud**, create an account, click the link in the verification email, and click **Claim ownership**. Only one account can ever be the owner, so do this before anyone else signs in.
+- **Staff:** the owner adds their emails in **Settings → Cloud → Team**. Staff then create an account with that email, verify it, and get access. Removing an email cuts that person's access immediately.
+
+Security: the web config only identifies the project, so it's safe to publish. Access is enforced by `firestore.rules`. It requires a verified email that belongs to the owner or an approved staff member, and rejects any write that is older than the data already stored.
+
+To test the rules locally (needs Java), run:
+
+```bash
+npm run test:rules
+```
+
+## Online version
+
+The web app is built from this repository and hosted on HTTPS, so it can be used from any phone, tablet or PC, with the camera scanner. To host it yourself, deploy the `dist/` folder (from `npm run build:web`) to any static HTTPS host. On a trusted HTTPS address, the service worker caches the app so it also loads while offline.
 
 ## 6. How sync works
 
 | Concern | Approach |
 |---|---|
 | Local store | IndexedDB (Dexie) on every device. The desktop hub stores data in SQLite (`%APPDATA%/PureLab/purelab-hub.sqlite`). |
-| Conflicts | Last-write-wins: the higher `updated_at` wins, and on a tie the higher `device_id` wins. The client, the hub and Postgres all apply the same rule, so every copy ends up identical. |
+| Conflicts | Last-write-wins: the higher `updated_at` wins, and on a tie the higher `device_id` wins. The client, the hub and the Firestore rules all apply the same rule, so every copy ends up identical. |
 | Deletes | Soft deletes (`deleted = 1`) that sync like any other change. |
 | Push | A local change counter (`_lseq`), with a separate cursor for each remote. One change can go to the hub and to the cloud independently. |
-| Pull | Uses a counter assigned by the server (hub `seq` or Postgres `server_seq`), not device clocks, so clock drift between devices can't cause missed changes. |
+| Pull | Uses a counter assigned by the server (the hub's `seq`, or Firestore's commit time plus document ID), not device clocks, so clock drift between devices can't cause missed changes. |
 | Stock | A ledger where entries are only added. Sale entries have fixed IDs (`sale:<invoice>:<product>`), so if two offline devices edit the same invoice, the stock is deducted once, not twice. |
 | Invoice numbers | `PREFIX-DEVICE-000123`, which stays unique across devices that were offline at the same time. |
 

@@ -2,11 +2,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { Icon, Field, PageHeader, useToast } from '../components/ui.jsx';
-import { useSyncStatus } from '../components/SyncIndicator.jsx';
+import CloudPanel from '../components/CloudPanel.jsx';
 import { useSettings, updateSettings } from '../lib/settings.js';
-import { resetFormatCache, relative } from '../lib/format.js';
+import { resetFormatCache } from '../lib/format.js';
 import { desktop, isDesktop } from '../lib/platform.js';
-import { getSupabase } from '../sync/supabaseAdapter.js';
 import { syncEngine } from '../sync/engine.js';
 import { exportBackup, importBackup } from '../db/repo.js';
 import { loadDemoData } from '../lib/demo.js';
@@ -66,62 +65,6 @@ function InvoicingSection() {
         <Field label="Bank details (printed)" className="sm:col-span-3"><textarea className="input" rows={2} value={s.bankDetails} onChange={set('bankDetails')} placeholder="Bank, IBAN, SWIFT" /></Field>
         <Field label="USDT wallet address (printed)" className="sm:col-span-3"><input className="input font-mono" value={s.usdtWallet} onChange={set('usdtWallet')} placeholder="TRC20 / ERC20 address" /></Field>
         <Field label="Invoice footer" className="sm:col-span-3"><textarea className="input" rows={2} value={s.invoiceFooter} onChange={set('invoiceFooter')} /></Field>
-      </div>
-    </Section>
-  );
-}
-
-function CloudSection() {
-  const s = useSettings();
-  const toast = useToast();
-  const status = useSyncStatus();
-  const [session, setSession] = useState(null);
-  const [creds, setCreds] = useState({ email: '', password: '' });
-  const client = getSupabase(s.sync.supabaseUrl, s.sync.supabaseAnonKey);
-  const setSync = (k) => (e) => updateSettings((cur) => ({ ...cur, sync: { ...cur.sync, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value.trim() } }));
-
-  useEffect(() => {
-    if (!client) { setSession(null); return undefined; }
-    client.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data } = client.auth.onAuthStateChange((_e, sess) => setSession(sess));
-    return () => data.subscription.unsubscribe();
-  }, [client]);
-
-  const signIn = async (mode) => {
-    if (!client) return;
-    const fn = mode === 'up' ? client.auth.signUp : client.auth.signInWithPassword;
-    const { error } = await fn.call(client.auth, creds);
-    if (error) toast(error.message, 'error');
-    else { toast(mode === 'up' ? 'Account created — check your email if confirmation is enabled' : 'Signed in'); syncEngine.syncSoon(300); }
-  };
-
-  const cloud = Object.entries(status.remotes).find(([id]) => id.startsWith('cloud:'))?.[1];
-
-  return (
-    <Section title="Cloud sync (Supabase)" description="Syncs invoices, customers, products and stock whenever this device is online. Run supabase/schema.sql in your project first.">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Project URL"><input className="input" placeholder="https://xyzcompany.supabase.co" value={s.sync.supabaseUrl} onChange={setSync('supabaseUrl')} /></Field>
-        <Field label="Anon / publishable key"><input className="input font-mono text-xs" value={s.sync.supabaseAnonKey} onChange={setSync('supabaseAnonKey')} /></Field>
-      </div>
-      {client && (session ? (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-          <span>Signed in as <b>{session.user.email}</b>{cloud && <> · {cloud.ok ? `synced ${relative(cloud.lastSyncAt)}` : cloud.error}</>}</span>
-          <button type="button" className="btn-secondary btn-sm" onClick={() => client.auth.signOut()}>Sign out</button>
-        </div>
-      ) : (
-        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto]">
-          <input className="input" type="email" placeholder="Email" value={creds.email} onChange={(e) => setCreds({ ...creds, email: e.target.value })} />
-          <input className="input" type="password" placeholder="Password" value={creds.password} onChange={(e) => setCreds({ ...creds, password: e.target.value })} />
-          <button type="button" className="btn-primary" onClick={() => signIn('in')}>Sign in</button>
-          <button type="button" className="btn-secondary" onClick={() => signIn('up')}>Create account</button>
-        </div>
-      ))}
-      <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
-        <label className="flex items-center gap-2"><input type="checkbox" checked={s.sync.autoSync} onChange={setSync('autoSync')} /> Auto-sync</label>
-        <label className="flex items-center gap-2">every
-          <input className="input w-20" inputMode="numeric" value={s.sync.intervalSec}
-            onChange={(e) => updateSettings((cur) => ({ ...cur, sync: { ...cur.sync, intervalSec: Number(e.target.value) || 60 } }))} /> s</label>
-        <button type="button" className="btn-secondary btn-sm" onClick={() => syncEngine.syncNow()}><Icon name="refresh" className="h-4 w-4" /> Sync now</button>
       </div>
     </Section>
   );
@@ -260,7 +203,7 @@ export default function Settings() {
       <CompanySection />
       <InvoicingSection />
       {isDesktop ? <DesktopHubSection /> : <MobileHubSection />}
-      <CloudSection />
+      <CloudPanel />
       <DataSection />
     </div>
   );

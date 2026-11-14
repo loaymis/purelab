@@ -48,8 +48,7 @@ function defaults() {
     sync: {
       autoSync: true,
       intervalSec: 60,
-      supabaseUrl: '',
-      supabaseAnonKey: '',
+      firebaseConfig: null, // per-device override of src/firebase.config.js
       hubUrl: '',
       hubToken: '',
     },

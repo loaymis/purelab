@@ -1,0 +1,94 @@
+rules_version = '2';
+
+// PureLab — Firestore security rules.
+// Paste into Firebase console → Firestore Database → Rules → Publish.
+//
+// Who can access data:
+//   • The owner: the first verified user who clicks "Claim ownership" in PureLab
+//     (Settings → Cloud). Stored in pl_meta/owner and never changeable afterwards.
+//   • Staff: verified users whose email the owner added in Settings → Team (pl_staff/{email}).
+// Everyone else, including users who signed up but were not approved, can read nothing.
+//
+// Data writes must be NEWER than what is stored (last-write-wins: higher updated_at, or the
+// same updated_at and a higher device_id). This matches the merge rule used by every PureLab
+// device and the desktop hub, so a stale offline device can never overwrite newer data.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function verified() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+    function ownerPath() {
+      return /databases/$(database)/documents/pl_meta/owner;
+    }
+    function isOwner() {
+      return verified() && exists(ownerPath()) && get(ownerPath()).data.uid == request.auth.uid;
+    }
+    function isStaff() {
+      return verified() && (
+        isOwner() || exists(/databases/$(database)/documents/pl_staff/$(myEmail()))
+      );
+    }
+
+    // ---------------------------------------------------------------- ownership
+    match /pl_meta/owner {
+      allow read: if signedIn();
+      allow create: if verified()
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'created_at'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == myEmail()
+        && request.resource.data.created_at == request.time;
+      allow update, delete: if false;
+    }
+
+    // -------------------------------------------------------------------- staff
+    match /pl_staff/{email} {
+      // Staff see the team; anyone signed in may check whether THEY are approved.
+      allow read: if isStaff() || (signedIn() && email == myEmail());
+      allow create, update: if isOwner()
+        && email == email.lower()
+        && request.resource.data.keys().hasOnly(['email', 'added_at'])
+        && request.resource.data.email == email
+        && request.resource.data.added_at == request.time;
+      allow delete: if isOwner();
+    }
+
+    // --------------------------------------------------------------------- data
+    function validRecord(id) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['data', 'updated_at', 'device_id', 'deleted', 'server_updated'])
+        && d.data is map
+        && d.data.id == id
+        && d.updated_at is int
+        && d.device_id is string
+        && d.deleted is bool
+        && d.server_updated == request.time;
+    }
+    function isNewer() {
+      let n = request.resource.data;
+      let o = resource.data;
+      return n.updated_at > o.updated_at
+        || (n.updated_at == o.updated_at && n.device_id > o.device_id);
+    }
+
+    match /{collection}/{id} {
+      allow read: if isStaff()
+        && collection in ['pl_products', 'pl_customers', 'pl_invoices', 'pl_stock_movements'];
+      allow create: if isStaff()
+        && collection in ['pl_products', 'pl_customers', 'pl_invoices', 'pl_stock_movements']
+        && validRecord(id);
+      allow update: if isStaff()
+        && collection in ['pl_products', 'pl_customers', 'pl_invoices', 'pl_stock_movements']
+        && validRecord(id)
+        && isNewer();
+      // Records are never hard-deleted; deletions sync as `deleted: true`.
+      allow delete: if false;
+    }
+  }
+}

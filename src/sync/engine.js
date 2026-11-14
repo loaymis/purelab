@@ -3,7 +3,7 @@
  *
  * Remotes (any combination):
  *   • Desktop LAN hub  — works with no internet at all.
- *   • Supabase cloud   — used whenever the internet is reachable.
+ *   • Firebase cloud   — Firestore, used whenever the internet is reachable.
  * A desktop configured with both acts as a bridge: phone → hub → cloud.
  *
  * For each remote and table:
@@ -17,7 +17,8 @@ import { onLocalChange } from '../db/repo.js';
 import { getSettings, subscribeSettings } from '../lib/settings.js';
 import { desktop } from '../lib/platform.js';
 import { HubAdapter } from './hubAdapter.js';
-import { SupabaseAdapter } from './supabaseAdapter.js';
+import { FirebaseAdapter } from './firebaseAdapter.js';
+import { getFirebaseConfig } from './firebaseClient.js';
 
 const PUSH_BATCH = 200;
 
@@ -123,7 +124,8 @@ class SyncEngine {
     const list = [];
     if (this.desktopHub) list.push(new HubAdapter(this.desktopHub.url, this.desktopHub.token));
     else if (sync.hubUrl && sync.hubToken) list.push(new HubAdapter(sync.hubUrl, sync.hubToken));
-    if (sync.supabaseUrl && sync.supabaseAnonKey) list.push(new SupabaseAdapter(sync.supabaseUrl, sync.supabaseAnonKey));
+    const firebase = getFirebaseConfig();
+    if (firebase) list.push(new FirebaseAdapter(firebase));
     return list;
   }
 

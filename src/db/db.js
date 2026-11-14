@@ -30,7 +30,7 @@ export function toWire(record) {
   return rest;
 }
 
-/** LWW comparison shared with the hub and the Supabase function. */
+/** LWW comparison shared with the desktop hub and the Firestore security rules. */
 export function isNewer(a, b) {
   if (!b) return true;
   if (a.updated_at !== b.updated_at) return a.updated_at > b.updated_at;
