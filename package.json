@@ -5,6 +5,10 @@
   "description": "PureLab — offline-first invoicing & POS for pharmaceutical and dermo-cosmetic sales",
   "author": "PureLab",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pharmacist24/purelab.git"
+  },
   "private": true,
   "main": "electron/main.js",
   "scripts": {

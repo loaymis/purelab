@@ -10,6 +10,18 @@ Offline-first invoicing and point-of-sale software for pharmaceutical and dermo-
 - **Inventory:** batches, expiry dates, reorder levels, and a stock ledger that never loses entries (adjustments, receipts, damaged or expired stock). Stock is deducted when an invoice is issued, and returned when an invoice is voided or edited.
 - **Customers:** pharmacies, clinics and retail customers, with credit limits, opening balances, live outstanding balances and purchase history.
 
+## Download
+
+**[Download PureLab for Windows](https://github.com/pharmacist24/purelab/releases/latest/download/PureLab-Setup.exe)**: a one-click installer. Double-click it and PureLab installs, creates desktop and Start-menu shortcuts, and opens.
+
+> The repository is private, so the link only works for someone signed in to GitHub with access to it.
+> The installer is not code-signed yet. If Windows shows "Windows protected your PC", choose **More info → Run anyway**.
+
+### Publishing a new version
+1. Change `"version"` in `package.json`, for example to `1.0.1`, and commit.
+2. Run `git tag v1.0.1` and then `git push origin main --tags`.
+3. GitHub Actions (`.github/workflows/release.yml`) builds the installer on Windows and publishes it as the latest release. The download link above then serves the new version.
+
 ---
 
 ## 1. Project structure
