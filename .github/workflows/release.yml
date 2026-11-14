@@ -1,34 +1,62 @@
-# Builds the one-click Windows installer on every version tag (v1.0.0, v1.0.1, ...)
-# and publishes it as a GitHub Release. Permanent download link:
-#   https://github.com/<owner>/<repo>/releases/latest/download/PureLab-Setup.exe
+# Builds the one-click Windows installer and publishes it as a GitHub Release.
+#
+# Runs on every push to main, and on demand from the Actions tab. The release tag is
+# taken from "version" in package.json (v1.0.0, v1.0.1, ...): bump the version to
+# publish a new release. Pushing again without a version bump rebuilds and replaces
+# the installer in the current release.
+#
+# Permanent download link (always the newest release):
+#   https://github.com/loaymis/purelab/releases/latest/download/PureLab-Setup.exe
 name: Release Windows installer
 
 on:
   push:
+    branches: [main]
     tags: ['v*']
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm test
-      - run: npm run dist:win
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Build installer
+        run: npm run dist:win
         env:
           # Optional code signing: add these repository secrets to remove the SmartScreen warning.
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-      - uses: softprops/action-gh-release@v2
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: PureLab ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: release/PureLab-Setup.exe
-          generate_release_notes: true
           make_latest: true
+          generate_release_notes: true

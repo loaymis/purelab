@@ -19,8 +19,9 @@ Offline-first invoicing and point-of-sale software for pharmaceutical and dermo-
 
 ### Publishing a new version
 1. Change `"version"` in `package.json`, for example to `1.0.1`, and commit.
-2. Run `git tag v1.0.1` and then `git push origin main --tags`.
-3. GitHub Actions (`.github/workflows/release.yml`) builds the installer on Windows and publishes it as the latest release. The download link above then serves the new version.
+2. Push to `main` with `git push`.
+3. GitHub Actions (`.github/workflows/release.yml`) builds the installer on Windows and publishes it as release `v1.0.1`. The download link above then serves the new version.
+   If you push without changing the version, the installer in the current release is rebuilt and replaced. You can also start a build manually from the **Actions** tab with **Run workflow**.
 
 ---
 
