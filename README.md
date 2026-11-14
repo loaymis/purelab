@@ -12,7 +12,7 @@ Offline-first invoicing and point-of-sale software for pharmaceutical and dermo-
 
 ## Download
 
-**[Download PureLab for Windows](https://github.com/pharmacist24/purelab/releases/latest/download/PureLab-Setup.exe)**: a one-click installer. Double-click it and PureLab installs, creates desktop and Start-menu shortcuts, and opens.
+**[Download PureLab for Windows](https://github.com/loaymis/purelab/releases/latest/download/PureLab-Setup.exe)**: a one-click installer. Double-click it and PureLab installs, creates desktop and Start-menu shortcuts, and opens.
 
 > The repository is private, so the link only works for someone signed in to GitHub with access to it.
 > The installer is not code-signed yet. If Windows shows "Windows protected your PC", choose **More info → Run anyway**.

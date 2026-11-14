@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pharmacist24/purelab.git"
+    "url": "https://github.com/loaymis/purelab.git"
   },
   "private": true,
   "main": "electron/main.js",
