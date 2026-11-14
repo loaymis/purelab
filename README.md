@@ -14,12 +14,12 @@ Offline-first invoicing and point-of-sale software for pharmaceutical and dermo-
 
 **[Download PureLab for Windows](https://github.com/loaymis/purelab/releases/latest/download/PureLab-Setup.exe)**: a one-click installer. Double-click it and PureLab installs, creates desktop and Start-menu shortcuts, and opens.
 
-> The repository is private, so the link only works for someone signed in to GitHub with access to it.
+> The link always serves the newest release, and anyone can use it without a GitHub account. All versions are listed on the [Releases page](https://github.com/loaymis/purelab/releases).
 > The installer is not code-signed yet. If Windows shows "Windows protected your PC", choose **More info → Run anyway**.
 
 ### Publishing a new version
 1. Change `"version"` in `package.json`, for example to `1.0.1`, and commit.
-2. Push to `main` with `git push`.
+2. Push to `main` with `git push`. Pushes that only change Markdown files (such as this README) don't trigger a build.
 3. GitHub Actions (`.github/workflows/release.yml`) builds the installer on Windows and publishes it as release `v1.0.1`. The download link above then serves the new version.
    If you push without changing the version, the installer in the current release is rebuilt and replaced. You can also start a build manually from the **Actions** tab with **Run workflow**.
 
