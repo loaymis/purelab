@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Icon, PageHeader, EmptyState, StatusBadge, ListSkeleton, Fab } from '../components/ui.jsx';
+import { Icon, PageHeader, EmptyState, StatusBadge, ListSkeleton, Fab, useConfirm, useToast } from '../components/ui.jsx';
 import { useInvoices } from '../db/hooks.js';
+import { deleteVoidedInvoices } from '../db/repo.js';
 import { paymentStatus } from '../lib/calc.js';
 import { money, date } from '../lib/format.js';
 import { useT } from '../i18n/index.js';
@@ -17,6 +18,8 @@ export default function Invoices() {
   const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
+  const confirm = useConfirm();
+  const toast = useToast();
 
   const withStatus = useMemo(() => (invoices || []).map((inv) => ({ ...inv, _status: paymentStatus(inv) })), [invoices]);
   const counts = useMemo(() => withStatus.reduce((m, i) => ({ ...m, [i._status]: (m[i._status] || 0) + 1 }), {}), [withStatus]);
@@ -27,6 +30,12 @@ export default function Invoices() {
       .filter((inv) => !needle || [inv.number, inv.customer?.name, inv.customer?.phone, ...(inv.items || []).map((i) => i.name)]
         .some((v) => String(v || '').toLowerCase().includes(needle)));
   }, [withStatus, q, filter]);
+  const deleteAllVoid = async () => {
+    if (!(await confirm({ title: t('Delete voided invoices'), message: t('Delete all {n} voided invoices? This can’t be undone.', { n: counts.void }), danger: true, confirmLabel: t('Delete') }))) return;
+    const n = await deleteVoidedInvoices();
+    toast(t('{n} voided invoices deleted', { n }));
+    setFilter('all');
+  };
   const shownTotal = rows.filter((r) => r.status === 'issued').reduce((s, r) => s + (r.totals?.grandTotal || 0), 0);
 
   return (
@@ -46,6 +55,14 @@ export default function Invoices() {
             </button>
           ))}
         </div>
+        {filter === 'void' && counts.void > 0 && (
+          <div className="flex items-center justify-between gap-3 rounded-2xl bg-rose-500/10 px-4 py-2.5 text-sm">
+            <span className="text-ink">{t('Voided invoices no longer count in sales or stock.')}</span>
+            <button type="button" className="btn-danger btn-sm shrink-0" onClick={deleteAllVoid}>
+              <Icon name="trash" className="h-4 w-4" />{t('Delete all voided ({n})', { n: counts.void })}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="card overflow-hidden">

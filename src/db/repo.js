@@ -285,10 +285,26 @@ export async function voidInvoice(invoiceId, reason = '') {
   return saveInvoice({ ...inv, voidReason: reason, voidedAt: Date.now() }, 'void');
 }
 
-export async function deleteDraft(invoiceId) {
+/**
+ * Delete a draft or a voided invoice (soft delete, so the deletion syncs to every device).
+ * Issued invoices must be voided first so stock and customer balances stay correct;
+ * voiding has already returned the stock.
+ */
+export async function deleteInvoice(invoiceId) {
   const inv = await db.invoices.get(invoiceId);
-  if (!inv || inv.status !== 'draft') throw new Error('Only drafts can be deleted');
-  return saveInvoice({ ...inv, deleted: 1 }, 'draft');
+  if (!inv || inv.deleted) throw new Error('Invoice not found');
+  if (inv.status !== 'draft' && inv.status !== 'void') throw new Error('Void the invoice before deleting it');
+  return saveInvoice({ ...inv, deleted: 1 }, inv.status);
+}
+
+/** Kept for existing callers. */
+export const deleteDraft = deleteInvoice;
+
+/** Delete every voided invoice. Returns how many were deleted. */
+export async function deleteVoidedInvoices() {
+  const voided = await db.invoices.filter((i) => !i.deleted && i.status === 'void').toArray();
+  for (const inv of voided) await saveInvoice({ ...inv, deleted: 1 }, 'void');
+  return voided.length;
 }
 
 /* --------------------------------------------------------- backup / restore */

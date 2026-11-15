@@ -568,6 +568,16 @@ const ar = {
   Payment: 'الدفع',
   'Earlier payments': 'مدفوعات سابقة',
 
+  // ------------------------------------------------ delete voided invoices
+  'Delete invoice': 'حذف الفاتورة',
+  'Delete voided invoice {n}? This can’t be undone.': 'حذف الفاتورة الملغاة {n}؟ لا يمكن التراجع عن ذلك.',
+  'Invoice {n} deleted': 'تم حذف الفاتورة {n}',
+  'Delete voided invoices': 'حذف الفواتير الملغاة',
+  'Delete all voided ({n})': 'حذف كل الملغاة ({n})',
+  'Delete all {n} voided invoices? This can’t be undone.': 'حذف جميع الفواتير الملغاة ({n})؟ لا يمكن التراجع عن ذلك.',
+  '{n} voided invoices deleted': 'تم حذف {n} من الفواتير الملغاة',
+  'Voided invoices no longer count in sales or stock.': 'الفواتير الملغاة لا تُحتسب في المبيعات أو المخزون.',
+
   // --------------------------------------------------------- scanner / pair
   Camera: 'الكاميرا',
   Flashlight: 'الفلاش',

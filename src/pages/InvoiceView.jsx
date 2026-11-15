@@ -7,7 +7,7 @@ import {
   Icon, Sheet, Field, StatusBadge, Segmented, Skeleton, useToast, useConfirm, usePrompt,
 } from '../components/ui.jsx';
 import { useInvoice } from '../db/hooks.js';
-import { addPayment, voidInvoice, deleteDraft, saveInvoice } from '../db/repo.js';
+import { addPayment, voidInvoice, deleteInvoice, saveInvoice } from '../db/repo.js';
 import { paymentStatus } from '../lib/calc.js';
 import { quickCashAmounts } from '../lib/cash.js';
 import { money, todayISO } from '../lib/format.js';
@@ -93,9 +93,11 @@ export default function InvoiceView() {
     toast(t('Invoice {n} voided', { n: invoice.number }), 'warn');
   };
   const onDelete = async () => {
-    if (!(await confirm({ message: t('Delete this draft?'), danger: true, confirmLabel: t('Delete') }))) return;
-    await deleteDraft(invoice.id);
-    toast(t('Draft deleted'));
+    const isVoid = invoice.status === 'void';
+    const message = isVoid ? t('Delete voided invoice {n}? This can’t be undone.', { n: invoice.number }) : t('Delete this draft?');
+    if (!(await confirm({ title: isVoid ? t('Delete invoice') : undefined, message, danger: true, confirmLabel: t('Delete') }))) return;
+    await deleteInvoice(invoice.id);
+    toast(isVoid ? t('Invoice {n} deleted', { n: invoice.number }) : t('Draft deleted'));
     navigate('/invoices', { replace: true });
   };
   const onDuplicate = async () => {
@@ -156,8 +158,10 @@ export default function InvoiceView() {
         {invoice.status === 'issued' && (
           <button type="button" className="btn-ghost btn-sm text-rose-600" onClick={onVoid}><Icon name="ban" className="h-4 w-4" />{t('Void')}</button>
         )}
-        {invoice.status === 'draft' && (
-          <button type="button" className="btn-ghost btn-sm text-rose-600" onClick={onDelete}><Icon name="trash" className="h-4 w-4" />{t('Delete draft')}</button>
+        {(invoice.status === 'draft' || invoice.status === 'void') && (
+          <button type="button" className="btn-ghost btn-sm text-rose-600" onClick={onDelete}>
+            <Icon name="trash" className="h-4 w-4" />{invoice.status === 'void' ? t('Delete invoice') : t('Delete draft')}
+          </button>
         )}
       </div>
 
