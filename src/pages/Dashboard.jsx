@@ -2,9 +2,9 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Icon, Segmented, StatusBadge, EmptyState, Skeleton } from '../components/ui.jsx';
-import { useInvoices, useProducts, useStock, useBalances } from '../db/hooks.js';
+import { useInvoices, useProducts, useStock, useBalances, useExpiry } from '../db/hooks.js';
 import { paymentStatus } from '../lib/calc.js';
-import { money, number, date, todayISO, addDaysISO } from '../lib/format.js';
+import { money, moneyCompact, number, date, todayISO, addDaysISO } from '../lib/format.js';
 import { PAYMENT_METHODS, useSettings } from '../lib/settings.js';
 import { useT } from '../i18n/index.js';
 import { useCloudAccount } from '../hooks/useCloudAccount.js';
@@ -23,15 +23,22 @@ function Delta({ now, before }) {
   );
 }
 
-function Kpi({ label, value, sub, delta, to, icon }) {
+/**
+ * KPI card. On phones the card is half the screen wide, so the value is smaller and
+ * large amounts use compact notation ($12.5K); the full value shows from `sm` up and on hover.
+ */
+function Kpi({ label, value, compact, sub, delta, to, icon }) {
   const body = (
-    <div className="card h-full p-4 transition hover:-translate-y-0.5 hover:shadow-pop">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-muted">{label}</span>
-        <span className="rounded-lg bg-brand-500/10 p-1.5 text-accent"><Icon name={icon} className="h-4 w-4" /></span>
+    <div className="card h-full p-3.5 transition hover:-translate-y-0.5 hover:shadow-pop sm:p-4" title={typeof value === 'string' ? value : undefined}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-xs font-semibold text-muted">{label}</span>
+        <span className="hidden rounded-lg bg-brand-500/10 p-1.5 text-accent sm:inline-flex"><Icon name={icon} className="h-4 w-4" /></span>
       </div>
-      <div className="mt-2 truncate text-2xl font-bold tabular-nums tracking-tight text-ink sm:text-[1.7rem]">{value}</div>
-      <div className="mt-1 flex items-center gap-2 text-xs text-muted">{delta}{sub}</div>
+      <div className="mt-1.5 text-xl font-bold leading-tight tabular-nums tracking-tight text-ink sm:mt-2 sm:text-2xl lg:text-[1.7rem]">
+        <span className="sm:hidden">{compact ?? value}</span>
+        <span className="hidden break-words sm:inline">{value}</span>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-muted sm:text-xs">{delta}{sub}</div>
     </div>
   );
   return to ? <Link to={to}>{body}</Link> : body;
@@ -109,6 +116,7 @@ export default function Dashboard() {
   const invoices = useInvoices();
   const products = useProducts();
   const stock = useStock();
+  const expiry = useExpiry();
   const balances = useBalances();
   const settings = useSettings();
   const account = useCloudAccount();
@@ -150,7 +158,9 @@ export default function Dashboard() {
 
     const soon = addDaysISO(today, settings.expiryWarningDays);
     const low = products.filter((p) => (stock.get(p.id) || 0) <= (p.reorderLevel || 0));
-    const expiring = products.filter((p) => p.expiryDate && p.expiryDate <= soon && (stock.get(p.id) || 0) > 0)
+    const expOf = (p) => expiry.get(p.id) ?? p.expiryDate;
+    const expiring = products.filter((p) => expOf(p) && expOf(p) <= soon && (stock.get(p.id) || 0) > 0)
+      .map((p) => ({ ...p, expiryDate: expOf(p) }))
       .sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
     const receivable = [...balances.values()].reduce((s, v) => s + Math.max(0, v), 0);
     const overdue = issued.filter((i) => paymentStatus(i) === 'overdue');
@@ -164,7 +174,7 @@ export default function Dashboard() {
         label: m === 'credit' ? t('On credit') : t(PAYMENT_METHODS.find((x) => x.id === m)?.label || m), value,
       })),
     };
-  }, [invoices, products, stock, balances, settings.expiryWarningDays, period, t]);
+  }, [invoices, products, stock, expiry, balances, settings.expiryWarningDays, period, t]);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? t('Good morning') : hour < 18 ? t('Good afternoon') : t('Good evening');
@@ -202,17 +212,17 @@ export default function Dashboard() {
           ['invoice', t('Invoices'), '/invoices', 'bg-surface text-ink border border-line'],
         ].map(([icon, label, to, cls], i) => (
           <button key={to} type="button" onClick={() => navigate(to)}
-            className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold shadow-card transition active:scale-[.98] ${i === 0 ? `bg-gradient-to-br ${cls}` : `${cls} hover:bg-subtle`}`}>
-            <Icon name={icon} className="h-5 w-5" />{label}
+            className={`flex min-w-0 items-center gap-2 rounded-2xl px-3 py-2.5 text-[13px] font-semibold shadow-card transition active:scale-[.98] sm:gap-3 sm:px-4 sm:py-3 sm:text-sm ${i === 0 ? `bg-gradient-to-br ${cls}` : `${cls} hover:bg-subtle`}`}>
+            <Icon name={icon} className="h-5 w-5 shrink-0" /><span className="truncate">{label}</span>
           </button>
         ))}
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 [&>*]:min-w-0">
-        <Kpi icon="trend" label={t('Sales')} value={money(data.total)} delta={<Delta now={data.total} before={data.prevTotal} />} sub={periodLabel} to="/invoices" />
+        <Kpi icon="trend" label={t('Sales')} value={money(data.total)} compact={moneyCompact(data.total)} delta={<Delta now={data.total} before={data.prevTotal} />} sub={periodLabel} to="/invoices" />
         <Kpi icon="invoice" label={t('Invoices')} value={number(data.count)} delta={<Delta now={data.count} before={data.prevCount} />} sub={periodLabel} to="/invoices" />
-        <Kpi icon="cart" label={t('Average sale')} value={money(data.avg)} delta={<Delta now={data.avg} before={data.prevAvg} />} sub={periodLabel} />
-        <Kpi icon="wallet" label={t('Receivables')} value={money(data.receivable)} sub={t('{n} overdue', { n: data.overdue.length })} to="/customers" />
+        <Kpi icon="cart" label={t('Average sale')} value={money(data.avg)} compact={moneyCompact(data.avg)} delta={<Delta now={data.avg} before={data.prevAvg} />} sub={periodLabel} />
+        <Kpi icon="wallet" label={t('Receivables')} value={money(data.receivable)} compact={moneyCompact(data.receivable)} sub={t('{n} overdue', { n: data.overdue.length })} to="/customers" />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3 [&>*]:min-w-0">

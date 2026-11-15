@@ -3,6 +3,27 @@ import { getLocale, t } from '../i18n/index.js';
 
 const fmtCache = new Map();
 
+/** Short money for tight spaces: $950, $12.5K, $1.2M (full value via money()). */
+export function moneyCompact(value, currency) {
+  const s = getSettings();
+  const code = currency || s.currency || 'USD';
+  const locale = getLocale();
+  const key = `c|${locale}|${code}`;
+  if (!fmtCache.has(key)) {
+    try {
+      fmtCache.set(key, new Intl.NumberFormat(locale, {
+        style: 'currency', currency: code, currencyDisplay: 'narrowSymbol', notation: 'compact', maximumFractionDigits: 1,
+      }));
+    } catch {
+      fmtCache.set(key, new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact' }));
+    }
+  }
+  const n = Number(value) || 0;
+  if (Math.abs(n) < 10000) return money(n, currency); // small amounts read fine in full
+  const out = fmtCache.get(key).format(n);
+  return locale.startsWith('ar') ? out.replace('US$', '$') : out;
+}
+
 export function money(value, currency) {
   const s = getSettings();
   const code = currency || s.currency || 'USD';

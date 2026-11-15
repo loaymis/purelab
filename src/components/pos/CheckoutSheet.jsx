@@ -1,18 +1,16 @@
 /**
- * Checkout: customer, payment method(s), quick cash, change due, extra options.
+ * Checkout: customer, Cash or Pay later, quick cash, change due, extra options.
  * The parent owns the invoice draft; this edits it via `update(patch)`.
  */
 import React, { useEffect, useState } from 'react';
 import { Icon, Sheet, Field, Combobox, Segmented } from '../ui.jsx';
 import { useT } from '../../i18n/index.js';
 import { money } from '../../lib/format.js';
-import { round2 } from '../../lib/calc.js';
 import { quickCashAmounts } from '../../lib/cash.js';
 import { PAYMENT_METHODS, CUSTOMER_TYPES, useSettings } from '../../lib/settings.js';
 import { saveCustomer } from '../../db/repo.js';
 import { uuid } from '../../lib/ids.js';
 
-const METHOD_ICONS = { cash: 'cash', card: 'card', transfer: 'bank', usdt: 'crypto', cheque: 'invoice', mobile: 'phone' };
 const numeric = (v) => v.replace(/[^0-9.]/g, '');
 
 function QuickCustomer({ open, onClose, onCreated }) {
@@ -29,7 +27,7 @@ function QuickCustomer({ open, onClose, onCreated }) {
       footer={<><button type="button" className="btn-secondary" onClick={onClose}>{t('Cancel')}</button><button type="submit" form="qc-form" className="btn-primary">{t('Create')}</button></>}>
       <form id="qc-form" onSubmit={submit} className="space-y-3">
         <Field label={t('Name')}><input className="input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-        <Field label={t('Phone (for WhatsApp)')}><input className="input" type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+971 50 123 4567" /></Field>
+        <Field label={t('Phone (for WhatsApp)')}><input className="input" type="tel" dir="ltr" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+971 50 123 4567" /></Field>
         <Field label={t('Type')}>
           <select className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
             {CUSTOMER_TYPES.map((x) => <option key={x} value={x}>{t(x)}</option>)}
@@ -48,8 +46,7 @@ export default function CheckoutSheet({
   const [newCustomer, setNewCustomer] = useState(false);
   const [more, setMore] = useState(false);
 
-  // Start every checkout with a full cash payment pre-filled (the most common case).
-  // If the cart changed since the last checkout, a single payment follows the new total.
+  // New sales start as a full cash payment; if the cart changed, the cash amount follows the total.
   useEffect(() => {
     if (!open || editingIssued || !(totals.grandTotal > 0)) return;
     if (inv.payments.length === 0 && !inv._payLater) {
@@ -62,23 +59,22 @@ export default function CheckoutSheet({
   if (!open) return null;
 
   const payments = inv.payments;
-  const primary = payments[0];
-  const payLater = payments.length === 0;
+  const cash = payments.find((p) => p.method === 'cash');
+  const others = payments.filter((p) => p !== cash); // older invoices may hold card/transfer payments
+  const payLater = !cash;
+  const othersTotal = others.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const cashDue = Math.max(0, Math.round((totals.grandTotal - othersTotal) * 100) / 100);
+
+  const setMode = (mode) => {
+    if (mode === 'later') update({ payments: others, _payLater: true });
+    else if (!cash) update({ _payLater: false, payments: [{ id: uuid(), method: 'cash', amount: cashDue, reference: '', date: inv.date }, ...others] });
+  };
+  const setCash = (amount) => update({ payments: payments.map((p) => (p === cash ? { ...p, amount } : p)) });
+
   const customerOptions = (customers || []).map((c) => ({
     value: c.id, label: c.name,
     hint: [t(c.type), c.phone, (balances.get(c.id) || 0) > 0 ? `${t('owes')} ${money(balances.get(c.id))}` : ''].filter(Boolean).join(' · '),
   }));
-  const remainingFor = (idx) => round2(Math.max(0, totals.grandTotal - payments.reduce((s, p, i) => (i === idx ? s : s + (Number(p.amount) || 0)), 0)));
-
-  const setPayment = (idx, patch) => update({ payments: payments.map((p, i) => (i === idx ? { ...p, ...patch } : p)) });
-  const chooseMethod = (method) => {
-    if (payLater) update({ _payLater: false, payments: [{ id: uuid(), method, amount: totals.grandTotal, reference: '', date: inv.date }] });
-    else setPayment(0, { method });
-  };
-  const addSplit = () => update({ payments: [...payments, { id: uuid(), method: 'card', amount: remainingFor(payments.length), reference: '', date: inv.date }] });
-
-  const primaryMethod = PAYMENT_METHODS.find((m) => m.id === primary?.method);
-  const quick = primary?.method === 'cash' ? quickCashAmounts(remainingFor(0)) : [remainingFor(0)];
 
   return (
     <>
@@ -94,84 +90,55 @@ export default function CheckoutSheet({
         )}>
         <div className="grid gap-5 lg:grid-cols-[1fr_17rem]">
           <div className="space-y-5">
-            {/* Customer */}
+            {/* Payment: Cash or Pay later */}
             <section>
-              <div className="mb-1.5 flex items-center justify-between">
-                <span className="label mb-0">{t('Customer')}</span>
-                <button type="button" className="text-xs font-semibold text-accent" onClick={() => setNewCustomer(true)}>+ {t('New customer')}</button>
-              </div>
-              <Combobox value={inv.customerId} onChange={(customerId) => update({ customerId })} options={customerOptions}
-                placeholder={t('Walk-in customer — search to pick')} emptyLabel={t('Walk-in customer')} ariaLabel={t('Customer')} />
+              <span className="label">{t('Payment')}</span>
+              <Segmented value={payLater ? 'later' : 'cash'} onChange={setMode} ariaLabel={t('Payment')} options={[
+                { value: 'cash', label: t('Cash'), icon: 'cash' },
+                { value: 'later', label: t('Pay later'), icon: 'wallet' },
+              ]} />
             </section>
 
-            {/* Payment method */}
-            <section>
-              <span className="label">{t('Payment method')}</span>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                {PAYMENT_METHODS.map((m) => {
-                  const active = !payLater && primary?.method === m.id;
-                  return (
-                    <button key={m.id} type="button" onClick={() => chooseMethod(m.id)}
-                      className={`flex flex-col items-center gap-1 rounded-2xl border-2 px-2 py-3 text-xs font-semibold transition active:scale-95 ${
-                        active ? 'border-brand-600 bg-brand-500/10 text-accent' : 'border-line text-muted hover:border-faint hover:text-ink'}`}>
-                      <Icon name={METHOD_ICONS[m.id] || 'wallet'} className="h-5 w-5" />
-                      <span className="text-center leading-tight">{t(m.label)}</span>
-                    </button>
-                  );
-                })}
-                <button type="button" onClick={() => update({ payments: [], _payLater: true })}
-                  className={`flex flex-col items-center gap-1 rounded-2xl border-2 px-2 py-3 text-xs font-semibold transition active:scale-95 ${
-                    payLater ? 'border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'border-line text-muted hover:border-faint hover:text-ink'}`}>
-                  <Icon name="wallet" className="h-5 w-5" /><span className="text-center leading-tight">{t('Pay later')}</span>
-                </button>
-              </div>
-            </section>
-
-            {/* Amount */}
-            {!payLater && primary && (
+            {!payLater && (
               <section className="space-y-3">
-                <Field label={primary.method === 'cash' ? t('Cash received') : t('Amount')}>
-                  <input className="input text-lg font-bold tabular-nums" inputMode="decimal" value={primary.amount}
-                    onChange={(e) => setPayment(0, { amount: numeric(e.target.value) })} onFocus={(e) => e.target.select()} />
+                <Field label={t('Cash received')}>
+                  <input className="input text-lg font-bold tabular-nums" inputMode="decimal" value={cash.amount}
+                    onChange={(e) => setCash(numeric(e.target.value))} onFocus={(e) => e.target.select()} />
                 </Field>
                 <div className="flex flex-wrap gap-2">
-                  {quick.map((v, i) => (
-                    <button key={v} type="button" onClick={() => setPayment(0, { amount: v })}
-                      className={`chip ${Number(primary.amount) === v ? 'chip-active' : ''}`}>
+                  {quickCashAmounts(cashDue).map((v, i) => (
+                    <button key={v} type="button" onClick={() => setCash(v)} className={`chip ${Number(cash.amount) === v ? 'chip-active' : ''}`}>
                       {i === 0 ? `${t('Exact')} · ${money(v)}` : money(v)}
                     </button>
                   ))}
                 </div>
-                {primaryMethod?.needsRef && (
-                  <Field label={t(primaryMethod.refLabel)}>
-                    <input className="input font-mono text-sm" value={primary.reference} onChange={(e) => setPayment(0, { reference: e.target.value })} />
-                  </Field>
-                )}
-                {payments.slice(1).map((p, j) => {
-                  const idx = j + 1;
-                  const m = PAYMENT_METHODS.find((x) => x.id === p.method);
-                  return (
-                    <div key={p.id} className="space-y-2 rounded-2xl border border-line bg-subtle/50 p-3">
-                      <div className="flex gap-2">
-                        <select className="input" value={p.method} onChange={(e) => setPayment(idx, { method: e.target.value })} aria-label={t('Payment method')}>
-                          {PAYMENT_METHODS.map((x) => <option key={x.id} value={x.id}>{t(x.label)}</option>)}
-                        </select>
-                        <input className="input w-32 font-semibold tabular-nums" inputMode="decimal" value={p.amount} aria-label={t('Amount')}
-                          onChange={(e) => setPayment(idx, { amount: numeric(e.target.value) })} />
-                        <button type="button" className="btn-icon text-muted hover:text-rose-600" aria-label={t('Remove')}
-                          onClick={() => update({ payments: payments.filter((_, i) => i !== idx) })}><Icon name="trash" className="h-4 w-4" /></button>
-                      </div>
-                      {m?.needsRef && <input className="input font-mono text-xs" placeholder={t(m.refLabel)} value={p.reference} onChange={(e) => setPayment(idx, { reference: e.target.value })} />}
-                    </div>
-                  );
-                })}
-                <button type="button" className="text-sm font-semibold text-accent" onClick={addSplit}>+ {t('Split payment')}</button>
               </section>
             )}
-            {payLater && (
-              <p className="flex items-start gap-2 rounded-2xl bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
-                <Icon name="info" className="mt-0.5 h-4 w-4 shrink-0" />{t('The full amount is added to the customer’s balance. A customer must be selected.')}
-              </p>
+
+            {/* Customer (required for pay later) */}
+            <section>
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="label mb-0">{t('Customer')}{payLater && <span className="text-rose-600"> *</span>}</span>
+                <button type="button" className="text-xs font-semibold text-accent" onClick={() => setNewCustomer(true)}>+ {t('New customer')}</button>
+              </div>
+              <Combobox value={inv.customerId} onChange={(customerId) => update({ customerId })} options={customerOptions}
+                placeholder={t('Walk-in customer — search to pick')} emptyLabel={t('Walk-in customer')} ariaLabel={t('Customer')} />
+              {payLater && (
+                <p className="mt-2 flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300">
+                  <Icon name="info" className="mt-0.5 h-3.5 w-3.5 shrink-0" />{t('The full amount is added to the customer’s balance. A customer must be selected.')}
+                </p>
+              )}
+            </section>
+
+            {others.length > 0 && (
+              <section className="rounded-2xl bg-subtle p-3 text-sm">
+                <div className="label">{t('Earlier payments')}</div>
+                {others.map((p) => (
+                  <div key={p.id} className="flex justify-between text-muted">
+                    <span>{t(PAYMENT_METHODS.find((m) => m.id === p.method)?.label || p.method)}</span><span className="tabular-nums">{money(p.amount)}</span>
+                  </div>
+                ))}
+              </section>
             )}
 
             {/* More options */}
@@ -218,7 +185,7 @@ export default function CheckoutSheet({
             )}
             {totals.balance > 0 && (
               <div className="mt-2 rounded-xl bg-amber-500/15 p-3 text-center">
-                <div className="text-xs font-semibold text-amber-700 dark:text-amber-300">{t('Balance due')}</div>
+                <div className="text-xs font-semibold text-amber-700 dark:text-amber-300">{payLater ? t('On credit') : t('Balance due')}</div>
                 <div className="text-2xl font-bold tabular-nums text-amber-700 dark:text-amber-300">{money(totals.balance)}</div>
               </div>
             )}

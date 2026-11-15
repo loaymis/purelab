@@ -1,9 +1,10 @@
 # Builds the one-click Windows installer and publishes it as a GitHub Release.
 #
 # Runs on every push to main, and on demand from the Actions tab. The release tag is
-# taken from "version" in package.json (v1.0.0, v1.0.1, ...): bump the version to
-# publish a new release. Pushing again without a version bump rebuilds and replaces
-# the installer in the current release.
+# taken from "version" in package.json (v1.0.0, v1.0.1, ...). If a release for that
+# version already exists the build is skipped, so web-only changes never touch the
+# desktop installer: bump the version to publish a new installer. (Run the workflow
+# manually with "force" to rebuild the current version.)
 #
 # Permanent download link (always the newest release):
 #   https://github.com/loaymis/purelab/releases/latest/download/PureLab-Setup.exe
@@ -15,6 +16,11 @@ on:
     tags: ['v*']
     paths-ignore: ['**.md']
   workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild and replace the installer even if this version is already released
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -29,23 +35,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read version
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v$(node -p "require('./package.json').version")"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && [ "${{ inputs.force }}" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release $tag already exists — skipping installer build. Bump the version in package.json to publish a new installer."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-node@v4
+        if: steps.version.outputs.skip != 'true'
         with:
           node-version: 22
           cache: npm
 
       - name: Install dependencies
+        if: steps.version.outputs.skip != 'true'
         run: npm ci
 
       - name: Unit tests
+        if: steps.version.outputs.skip != 'true'
         run: npm test
 
-      - name: Read version
-        id: version
-        shell: bash
-        run: echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
       - name: Build installer
+        if: steps.version.outputs.skip != 'true'
         run: npm run dist:win
         env:
           # Optional code signing: add these repository secrets to remove the SmartScreen warning.
@@ -53,6 +73,7 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
       - name: Publish release
+        if: steps.version.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}

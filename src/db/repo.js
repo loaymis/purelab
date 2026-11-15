@@ -12,6 +12,7 @@ import { uuid } from '../lib/ids.js';
 import { computeTotals } from '../lib/calc.js';
 import { getSettings } from '../lib/settings.js';
 import { todayISO } from '../lib/format.js';
+import { currentExpiry } from '../lib/stock.js';
 
 const changeListeners = new Set();
 export const onLocalChange = (fn) => {
@@ -69,6 +70,7 @@ export function saveProduct(product, { openingStock = 0 } = {}) {
         reason: 'opening',
         note: 'Opening stock',
         batchNumber: saved.batchNumber || '',
+        expiryDate: saved.expiryDate || '',
       });
     }
     return saved;
@@ -82,14 +84,40 @@ export function deleteProduct(id) {
   });
 }
 
-export function adjustStock(productId, qty, reason, note = '') {
+export function adjustStock(productId, qty, reason, note = '', expiryDate = '') {
   return tx([db.products, db.stock_movements], async () => {
     const p = await db.products.get(productId);
     if (!p) throw new Error('Product not found');
     return write('stock_movements', {
       productId, qty: Number(qty), reason, note, batchNumber: p.batchNumber || '',
+      ...(expiryDate ? { expiryDate } : {}),
     });
   });
+}
+
+/**
+ * Restock an existing product: a new delivery (lot) with its own expiry date.
+ * The product keeps showing the earliest expiry still on the shelf (see lib/stock.js).
+ */
+export function receiveStock(productId, qty, expiryDate, note = 'Restock') {
+  if (!(Number(qty) > 0)) throw new Error('Enter the quantity received');
+  return adjustStock(productId, Math.abs(Number(qty)), 'purchase', note, expiryDate || '');
+}
+
+/** Map productId -> earliest expiry still in stock (first-expiry-first-out). */
+export async function expiryMap() {
+  const byProduct = new Map();
+  await db.stock_movements.each((m) => {
+    if (m.deleted) return;
+    if (!byProduct.has(m.productId)) byProduct.set(m.productId, []);
+    byProduct.get(m.productId).push(m);
+  });
+  const out = new Map();
+  await db.products.each((p) => {
+    if (p.deleted) return;
+    out.set(p.id, currentExpiry(byProduct.get(p.id) || [], p.expiryDate || ''));
+  });
+  return out;
 }
 
 /** Map productId -> current stock, from the ledger. */

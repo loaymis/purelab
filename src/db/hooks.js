@@ -1,7 +1,7 @@
 /** Live (auto-refreshing) queries for React components. */
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db.js';
-import { stockMap, customerBalances } from './repo.js';
+import { stockMap, customerBalances, expiryMap } from './repo.js';
 
 const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
 
@@ -11,6 +11,9 @@ export const useProducts = () =>
 export const useProduct = (id) => useLiveQuery(() => (id ? db.products.get(id) : undefined), [id]);
 
 export const useStock = () => useLiveQuery(() => stockMap(), [], new Map());
+
+/** productId -> earliest expiry still in stock (FEFO across restocked lots). */
+export const useExpiry = () => useLiveQuery(() => expiryMap(), [], new Map());
 
 export const useCustomers = () =>
   useLiveQuery(async () => (await db.customers.filter((c) => !c.deleted).toArray()).sort(byName), [], undefined);

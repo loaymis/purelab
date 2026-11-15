@@ -12,7 +12,7 @@ import Cart from '../components/pos/Cart.jsx';
 import CheckoutSheet from '../components/pos/CheckoutSheet.jsx';
 import SaleComplete from '../components/pos/SaleComplete.jsx';
 import { Icon, Segmented, useToast, useConfirm } from '../components/ui.jsx';
-import { useCustomers, useInvoice, useStock, useBalances, useProducts } from '../db/hooks.js';
+import { useCustomers, useInvoice, useStock, useBalances, useProducts, useExpiry } from '../db/hooks.js';
 import { saveInvoice, newInvoiceDraft } from '../db/repo.js';
 import { computeTotals } from '../lib/calc.js';
 import { money, addDaysISO } from '../lib/format.js';
@@ -33,6 +33,7 @@ export default function InvoiceEditor() {
   const customers = useCustomers();
   const balances = useBalances();
   const stock = useStock();
+  const expiry = useExpiry();
   const existing = useInvoice(id);
 
   const [inv, setInv] = useState(() => (id ? null : newInvoiceDraft()));
@@ -78,12 +79,12 @@ export default function InvoiceEditor() {
         ...cur,
         items: [...cur.items, {
           key: lineKey(), productId: p.id, sku: p.sku, name: p.name, batchNumber: batch,
-          expiryDate: extra.expiry || p.expiryDate || '', qty: 1, price: p.price,
+          expiryDate: extra.expiry || expiry.get(p.id) || p.expiryDate || '', qty: 1, price: p.price,
           discountPct: 0, taxRate: p.taxRate ?? settings.defaultTaxRate,
         }],
       };
     });
-  }, [settings.defaultTaxRate]);
+  }, [settings.defaultTaxRate, expiry]);
 
   const totals = useMemo(() => (inv ? computeTotals(inv.items, inv, inv.payments) : null), [inv]);
   const cartQty = useMemo(() => {
@@ -224,7 +225,7 @@ export default function InvoiceEditor() {
 
       <div className="grid gap-5 lg:grid-cols-[1fr_400px]">
         <section className={`min-w-0 ${mobileTab === 'products' ? '' : 'hidden lg:block'}`}>
-          <ProductGrid products={products} stock={effectiveStock} inCart={cartQty} onAdd={addProduct} searchRef={searchRef} />
+          <ProductGrid products={products} stock={effectiveStock} expiry={expiry} inCart={cartQty} onAdd={addProduct} searchRef={searchRef} />
         </section>
         <aside className={`min-w-0 lg:sticky lg:top-6 lg:self-start ${mobileTab === 'cart' ? '' : 'hidden lg:block'}`}>{cartPanel}</aside>
       </div>

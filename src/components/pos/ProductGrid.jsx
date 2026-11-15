@@ -19,7 +19,7 @@ const CAT_TONES = {
   Other: 'from-slate-400 to-slate-600',
 };
 
-export default function ProductGrid({ products, stock, inCart, onAdd, searchRef }) {
+export default function ProductGrid({ products, stock, expiry, inCart, onAdd, searchRef }) {
   const t = useT();
   const settings = useSettings();
   const [q, setQ] = useState('');
@@ -40,7 +40,7 @@ export default function ProductGrid({ products, stock, inCart, onAdd, searchRef 
     if (!products) return [];
     const n = q.trim().toLowerCase();
     return products.filter((p) => (cat === 'All' || p.category === cat)
-      && (!n || [p.name, p.sku, p.barcode, p.brand, p.batchNumber].some((v) => String(v || '').toLowerCase().includes(n))));
+      && (!n || [p.name, p.sku, p.barcode, p.brand].some((v) => String(v || '').toLowerCase().includes(n))));
   }, [products, q, cat]);
 
   const available = (p) => (stock.get(p.id) || 0) - (inCart.get(p.id) || 0);
@@ -101,8 +101,9 @@ export default function ProductGrid({ products, stock, inCart, onAdd, searchRef 
           {filtered.map((p) => {
             const left = available(p);
             const qty = inCart.get(p.id) || 0;
-            const expired = p.expiryDate && p.expiryDate < today;
-            const expiring = !expired && p.expiryDate && p.expiryDate <= soon;
+            const exp = expiry?.get(p.id) ?? p.expiryDate;
+            const expired = exp && exp < today;
+            const expiring = !expired && exp && exp <= soon;
             return (
               <button key={p.id} type="button" onClick={() => onAdd(p, {})}
                 className={`group relative flex flex-col overflow-hidden rounded-2xl border bg-surface p-3 text-start shadow-card transition hover:-translate-y-0.5 hover:shadow-pop active:scale-[.97] ${

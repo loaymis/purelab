@@ -12,7 +12,7 @@ import { paymentStatus } from '../lib/calc.js';
 import { quickCashAmounts } from '../lib/cash.js';
 import { money, todayISO } from '../lib/format.js';
 import { printDocument } from '../lib/print.js';
-import { PAYMENT_METHODS, useSettings, updateSettings } from '../lib/settings.js';
+import { useSettings, updateSettings } from '../lib/settings.js';
 import { useT } from '../i18n/index.js';
 
 function PaymentSheet({ open, invoice, onClose }) {
@@ -22,7 +22,6 @@ function PaymentSheet({ open, invoice, onClose }) {
   useEffect(() => {
     if (open) setForm({ method: 'cash', amount: String(invoice.totals?.balance || ''), reference: '', date: todayISO() });
   }, [open, invoice]);
-  const method = PAYMENT_METHODS.find((m) => m.id === form.method);
   const submit = async (e) => {
     e.preventDefault();
     if (!(Number(form.amount) > 0)) return;
@@ -38,10 +37,8 @@ function PaymentSheet({ open, invoice, onClose }) {
         <div className="flex items-center justify-between rounded-2xl bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
           <span>{t('Balance due')}</span><b className="text-lg tabular-nums">{money(invoice.totals?.balance)}</b>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {PAYMENT_METHODS.map((m) => (
-            <button key={m.id} type="button" onClick={() => setForm({ ...form, method: m.id })} className={`chip ${form.method === m.id ? 'chip-active' : ''}`}>{t(m.label)}</button>
-          ))}
+        <div className="inline-flex items-center gap-1.5 rounded-xl bg-subtle px-3 py-1.5 text-sm font-semibold text-ink">
+          <Icon name="cash" className="h-4 w-4 text-accent" />{t('Cash')}
         </div>
         <Field label={t('Amount')}>
           <input className="input text-lg font-bold tabular-nums" inputMode="decimal" required value={form.amount}
@@ -52,9 +49,6 @@ function PaymentSheet({ open, invoice, onClose }) {
             <button key={v} type="button" className="chip" onClick={() => setForm({ ...form, amount: String(v) })}>{money(v)}</button>
           ))}
         </div>
-        {method?.needsRef && (
-          <Field label={t(method.refLabel)}><input className="input font-mono" value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} /></Field>
-        )}
         <Field label={t('Date')}><input type="date" className="input" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
       </form>
     </Sheet>
