@@ -1,37 +1,84 @@
+@import '@fontsource-variable/inter';
+@import '@fontsource/ibm-plex-sans-arabic/400.css';
+@import '@fontsource/ibm-plex-sans-arabic/500.css';
+@import '@fontsource/ibm-plex-sans-arabic/600.css';
+@import '@fontsource/ibm-plex-sans-arabic/700.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ------------------------------------------------------------ colour roles */
 @layer base {
+  :root {
+    --canvas: 246 248 250;
+    --surface: 255 255 255;
+    --subtle: 241 245 249;
+    --line: 226 232 240;
+    --ink: 15 23 42;
+    --muted: 71 85 105;
+    --faint: 148 163 184;
+    --accent: 21 98 86;
+    color-scheme: light;
+  }
+  :root.dark {
+    --canvas: 9 14 20;
+    --surface: 17 24 32;
+    --subtle: 27 36 46;
+    --line: 39 50 63;
+    --ink: 236 241 245;
+    --muted: 160 174 189;
+    --faint: 100 116 133;
+    --accent: 94 205 178;
+    color-scheme: dark;
+  }
+
   html, body, #root { height: 100%; }
-  body { -webkit-tap-highlight-color: transparent; }
+  body { @apply bg-canvas text-ink antialiased; -webkit-tap-highlight-color: transparent; }
+  :lang(ar) body, [lang='ar'] { font-family: 'IBM Plex Sans Arabic', 'Inter Variable', system-ui, sans-serif; }
   input, select, textarea { font-size: 16px; } /* prevents iOS zoom on focus */
   @media (min-width: 768px) { input, select, textarea { font-size: 14px; } }
+  ::selection { @apply bg-brand-200 text-brand-950; }
+  [dir='rtl'] .flip-rtl { transform: scaleX(-1); }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+  }
 }
 
+/* -------------------------------------------------------------- components */
 @layer components {
-  .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition
-    focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50; }
-  .btn-primary { @apply btn bg-brand-700 text-white hover:bg-brand-800 active:bg-brand-900; }
-  .btn-secondary { @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50; }
-  .btn-ghost { @apply btn text-slate-600 hover:bg-slate-100; }
+  .btn { @apply inline-flex min-h-[44px] select-none items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition
+    focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas
+    active:scale-[.98] disabled:pointer-events-none disabled:opacity-50; }
+  .btn-primary { @apply btn bg-brand-700 text-white shadow-sm hover:bg-brand-800 dark:bg-brand-600 dark:hover:bg-brand-500; }
+  .btn-secondary { @apply btn border border-line bg-surface text-ink shadow-sm hover:bg-subtle; }
+  .btn-ghost { @apply btn text-muted hover:bg-subtle hover:text-ink; }
   .btn-danger { @apply btn bg-rose-600 text-white hover:bg-rose-700; }
-  .btn-sm { @apply px-3 py-1.5 text-xs; }
-  .input { @apply block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm
-    placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30; }
-  .label { @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500; }
-  .card { @apply rounded-xl border border-slate-200 bg-white shadow-sm; }
-  .badge { @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold; }
-  .table-th { @apply px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500; }
-  .table-td { @apply px-3 py-2.5 text-sm text-slate-700; }
+  .btn-sm { @apply min-h-[36px] rounded-lg px-3 text-xs; }
+  .btn-icon { @apply btn min-w-[44px] px-0; }
+  .input { @apply block min-h-[44px] w-full rounded-xl border border-line bg-surface px-3 py-2 text-ink shadow-sm transition
+    placeholder:text-faint focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15; }
+  .label { @apply mb-1.5 block text-xs font-semibold text-muted; }
+  .card { @apply rounded-2xl border border-line bg-surface shadow-card; }
+  .badge { @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold; }
+  .table-th { @apply px-4 py-2.5 text-start text-xs font-semibold text-muted; }
+  .table-td { @apply px-4 py-3 text-sm text-ink; }
+  .chip { @apply inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 text-sm font-medium text-muted transition hover:text-ink; }
+  .chip-active { @apply border-brand-600 bg-brand-600 text-white hover:text-white dark:border-brand-500 dark:bg-brand-500; }
+  .skeleton { @apply relative overflow-hidden rounded-lg bg-subtle; }
+  .skeleton::after { content: ''; @apply absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/40 to-transparent dark:via-white/5; animation: shimmer 1.4s infinite; }
 }
+
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+[dir='rtl'] .skeleton::after { animation-direction: reverse; }
 
 /* html5-qrcode renders its own video element; make it fill our frame. */
-#purelab-scanner video { width: 100% !important; height: 100% !important; object-fit: cover; border-radius: 0.75rem; }
+#purelab-scanner video { width: 100% !important; height: 100% !important; object-fit: cover; border-radius: 0.875rem; }
 
-/* ----------------------------------------------------------------- print */
+/* ------------------------------------------------------------------ print */
 #print-root { display: none; }
 @media print {
+  :root { --canvas: 255 255 255; --surface: 255 255 255; --ink: 15 23 42; color-scheme: light; }
   html, body { background: #fff !important; height: auto; }
   body > *:not(#print-root) { display: none !important; }
   #print-root { display: block !important; }

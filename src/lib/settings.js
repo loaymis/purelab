@@ -44,6 +44,15 @@ function defaults() {
     bankDetails: '',
     usdtWallet: '',
     lowStockDefault: 10,
+    appearance: {
+      theme: 'auto', // 'auto' (follow device) | 'light' | 'dark'
+      language: (typeof navigator !== 'undefined' && /^ar\b/i.test(navigator.language || '')) ? 'ar' : 'en',
+      digits: 'latn', // 'latn' (0-9) | 'arab' (٠-٩) when language is Arabic
+    },
+    invoiceLanguage: 'auto', // 'auto' (= app language) | 'en' | 'ar' | 'bilingual'
+    onboarded: false, // owner setup wizard completed on this device
+    cloudBannerDismissed: false,
+    offlineMode: false, // web: user chose "continue offline on this device"
     expiryWarningDays: 90,
     sync: {
       autoSync: true,
@@ -68,6 +77,7 @@ function load() {
       ...saved,
       company: { ...base.company, ...(saved.company || {}) },
       sync: { ...base.sync, ...(saved.sync || {}) },
+      appearance: { ...base.appearance, ...(saved.appearance || {}) },
     };
   } catch {
     return base;

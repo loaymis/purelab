@@ -9,6 +9,10 @@ Offline-first invoicing and point-of-sale software for pharmaceutical and dermo-
 - **Cloud sync (Firebase Firestore):** used automatically whenever a device is online. Only the owner and staff emails the owner approves can see the data. A desktop connected to both the hub and the cloud passes data between them (phone → hub → cloud).
 - **Inventory:** batches, expiry dates, reorder levels, and a stock ledger that never loses entries (adjustments, receipts, damaged or expired stock). Stock is deducted when an invoice is issued, and returned when an invoice is voided or edited.
 - **Customers:** pharmacies, clinics and retail customers, with credit limits, opening balances, live outstanding balances and purchase history.
+- **Fast checkout:** tap-to-add product grid with category chips, a sticky **Charge** bar on phones, quick-cash buttons with change due, split payments and pay-later (credit).
+- **Share invoices:** WhatsApp, email, the phone's share menu, or a PDF created on the device (A4 or 80 mm receipt).
+- **English + Arabic:** full right-to-left layout, plus English, Arabic or bilingual invoices. Light, dark or follow-device theme.
+- **Sign-in & setup:** branded sign-in with email verification, ownership claim, staff approval, and a one-minute setup wizard (logo, currency, VAT, language).
 
 ## Download
 
@@ -160,6 +164,12 @@ Then connect PureLab:
 - **Staff:** the owner adds their emails in **Settings → Cloud → Team**. Staff then create an account with that email, verify it, and get access. Removing an email cuts that person's access immediately.
 
 Security: the web config only identifies the project, so it's safe to publish. Access is enforced by `firestore.rules`. It requires a verified email that belongs to the owner or an approved staff member, and rejects any write that is older than the data already stored.
+
+Translations: every UI string is English text looked up in `src/i18n/ar.js`. To list any missing Arabic strings, run:
+
+```bash
+npm run i18n:check
+```
 
 To test the rules locally (needs Java), run:
 

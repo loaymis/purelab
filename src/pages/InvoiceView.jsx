@@ -1,17 +1,22 @@
-/** Invoice preview with print, PDF export, payments, void, duplicate. */
+/** Invoice preview with print / PDF / share, payments, void, duplicate. */
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import InvoiceDocument, { PrintPortal } from '../components/InvoiceDocument.jsx';
-import { Icon, Modal, Field, StatusBadge, useToast } from '../components/ui.jsx';
+import ShareActions from '../components/ShareActions.jsx';
+import {
+  Icon, Sheet, Field, StatusBadge, Segmented, Skeleton, useToast, useConfirm, usePrompt,
+} from '../components/ui.jsx';
 import { useInvoice } from '../db/hooks.js';
 import { addPayment, voidInvoice, deleteDraft, saveInvoice } from '../db/repo.js';
 import { paymentStatus } from '../lib/calc.js';
+import { quickCashAmounts } from '../lib/cash.js';
 import { money, todayISO } from '../lib/format.js';
-import { printDocument, exportPDF } from '../lib/print.js';
+import { printDocument } from '../lib/print.js';
 import { PAYMENT_METHODS, useSettings, updateSettings } from '../lib/settings.js';
-import { desktop } from '../lib/platform.js';
+import { useT } from '../i18n/index.js';
 
-function PaymentModal({ open, invoice, onClose }) {
+function PaymentSheet({ open, invoice, onClose }) {
+  const t = useT();
   const toast = useToast();
   const [form, setForm] = useState({ method: 'cash', amount: '', reference: '', date: todayISO() });
   useEffect(() => {
@@ -22,165 +27,185 @@ function PaymentModal({ open, invoice, onClose }) {
     e.preventDefault();
     if (!(Number(form.amount) > 0)) return;
     await addPayment(invoice.id, form);
-    toast(`Payment of ${money(form.amount)} recorded`);
+    toast(t('Payment of {amount} recorded', { amount: money(form.amount) }));
     onClose();
   };
   return (
-    <Modal open={open} title={`Record payment — ${invoice.number}`} onClose={onClose} size="sm"
-      footer={<><button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-        <button type="submit" form="pay-form" className="btn-primary">Save payment</button></>}>
-      <form id="pay-form" onSubmit={submit} className="space-y-3">
-        <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">Balance due: <b>{money(invoice.totals?.balance)}</b></div>
-        <Field label="Method">
-          <select className="input" value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>
-            {PAYMENT_METHODS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-          </select>
+    <Sheet open={open} size="sm" title={t('Record payment')} onClose={onClose}
+      footer={<><button type="button" className="btn-secondary" onClick={onClose}>{t('Cancel')}</button>
+        <button type="submit" form="pay-form" className="btn-primary">{t('Save payment')}</button></>}>
+      <form id="pay-form" onSubmit={submit} className="space-y-4">
+        <div className="flex items-center justify-between rounded-2xl bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+          <span>{t('Balance due')}</span><b className="text-lg tabular-nums">{money(invoice.totals?.balance)}</b>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {PAYMENT_METHODS.map((m) => (
+            <button key={m.id} type="button" onClick={() => setForm({ ...form, method: m.id })} className={`chip ${form.method === m.id ? 'chip-active' : ''}`}>{t(m.label)}</button>
+          ))}
+        </div>
+        <Field label={t('Amount')}>
+          <input className="input text-lg font-bold tabular-nums" inputMode="decimal" required value={form.amount}
+            onChange={(e) => setForm({ ...form, amount: e.target.value.replace(/[^0-9.]/g, '') })} />
         </Field>
-        <Field label="Amount"><input className="input" inputMode="decimal" required value={form.amount}
-          onChange={(e) => setForm({ ...form, amount: e.target.value.replace(/[^0-9.]/g, '') })} /></Field>
+        <div className="flex flex-wrap gap-2">
+          {quickCashAmounts(invoice.totals?.balance || 0, 3).map((v) => (
+            <button key={v} type="button" className="chip" onClick={() => setForm({ ...form, amount: String(v) })}>{money(v)}</button>
+          ))}
+        </div>
         {method?.needsRef && (
-          <Field label={method.refLabel}><input className="input font-mono" value={form.reference}
-            onChange={(e) => setForm({ ...form, reference: e.target.value })} /></Field>
+          <Field label={t(method.refLabel)}><input className="input font-mono" value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} /></Field>
         )}
-        <Field label="Date"><input type="date" className="input" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
+        <Field label={t('Date')}><input type="date" className="input" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
       </form>
-    </Modal>
+    </Sheet>
   );
 }
 
 export default function InvoiceView() {
+  const t = useT();
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
+  const confirm = useConfirm();
+  const prompt = usePrompt();
   const settings = useSettings();
   const invoice = useInvoice(id);
   const [format, setFormat] = useState(settings.printFormat);
   const [payOpen, setPayOpen] = useState(false);
   const autoPrinted = useRef(false);
 
-  const fileName = invoice ? `${invoice.number}${invoice.customer ? ` - ${invoice.customer.name}` : ''}.pdf` : 'invoice.pdf';
-
-  const onPrint = async () => {
-    const res = await printDocument(format);
-    if (res && res.success === false && res.failureReason && res.failureReason !== 'cancelled') toast(`Print failed: ${res.failureReason}`, 'error');
-  };
-
-  const onPdf = async () => {
-    const res = await exportPDF(format, fileName);
-    if (res?.saved && res.filePath) {
-      toast('PDF saved');
-      desktop?.openFile(res.filePath);
-    }
-  };
-
-  // "Issue & print" from the POS lands here with autoPrint.
   useEffect(() => {
     if (invoice && location.state?.autoPrint && !autoPrinted.current) {
       autoPrinted.current = true;
       navigate(location.pathname, { replace: true, state: {} });
-      setTimeout(onPrint, 300);
+      setTimeout(() => printDocument(format), 300);
     }
   }); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (invoice === undefined) return <div className="p-8 text-center text-slate-500">Loading…</div>;
+  if (invoice === undefined) {
+    return <div className="space-y-4"><Skeleton className="h-10 w-64" /><Skeleton className="h-[60vh] w-full rounded-2xl" /></div>;
+  }
   if (!invoice || invoice.deleted) {
-    return <div className="p-8 text-center text-slate-500">Invoice not found. <Link className="text-brand-700 underline" to="/invoices">Back to invoices</Link></div>;
+    return <div className="p-8 text-center text-muted">{t('Invoice not found.')} <Link className="text-accent underline" to="/invoices">{t('Back to invoices')}</Link></div>;
   }
 
   const status = paymentStatus(invoice);
 
   const onVoid = async () => {
-    const reason = window.prompt('Reason for voiding this invoice? Stock will be returned.');
+    const reason = await prompt({ title: t('Void invoice'), message: t('Stock will be returned. Why are you voiding this invoice?'), confirmLabel: t('Void invoice'), placeholder: t('Reason (optional)') });
     if (reason === null) return;
     await voidInvoice(invoice.id, reason);
-    toast(`Invoice ${invoice.number} voided`, 'warn');
+    toast(t('Invoice {n} voided', { n: invoice.number }), 'warn');
   };
-
   const onDelete = async () => {
-    if (!window.confirm('Delete this draft?')) return;
+    if (!(await confirm({ message: t('Delete this draft?'), danger: true, confirmLabel: t('Delete') }))) return;
     await deleteDraft(invoice.id);
-    toast('Draft deleted');
+    toast(t('Draft deleted'));
     navigate('/invoices', { replace: true });
   };
-
   const onDuplicate = async () => {
     const { id: _id, number, totals, payments, issuedAt, created_at, updated_at, voidReason, voidedAt, ...rest } = invoice;
     const copy = await saveInvoice({ ...rest, id: null, number: '', payments: [], date: todayISO(), dueDate: '' }, 'draft');
     navigate(`/invoices/${copy.id}/edit`);
   };
-
   const onIssueDraft = async () => {
     await saveInvoice(invoice, 'issued');
-    toast(`Invoice ${invoice.number} issued`);
+    toast(t('Invoice {n} issued', { n: invoice.number }));
   };
 
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <button type="button" className="btn-ghost px-2" onClick={() => navigate('/invoices')} aria-label="Back">
+        <div className="flex min-w-0 items-center gap-2">
+          <button type="button" className="btn-icon -ms-2 rounded-full text-muted" onClick={() => navigate('/invoices')} aria-label={t('Back')}>
             <Icon name="chevronLeft" />
           </button>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold sm:text-2xl">{invoice.number}</h1>
+              <h1 className="truncate text-xl font-bold tracking-tight text-ink sm:text-2xl" dir="ltr">{invoice.number}</h1>
               <StatusBadge status={status} />
             </div>
-            <p className="text-sm text-slate-500">
-              {invoice.customer?.name || 'Walk-in'} · {money(invoice.totals?.grandTotal)}
-              {invoice.totals?.balance > 0 && invoice.status === 'issued' && <> · <b className="text-amber-700">{money(invoice.totals.balance)} due</b></>}
+            <p className="text-sm text-muted">
+              {invoice.customer?.name || t('Walk-in customer')} · {money(invoice.totals?.grandTotal)}
+              {invoice.totals?.balance > 0 && invoice.status === 'issued' && <> · <b className="text-amber-600">{t('{amount} due', { amount: money(invoice.totals.balance) })}</b></>}
             </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5">
-            {['a4', 'thermal'].map((f) => (
-              <button key={f} type="button" onClick={() => { setFormat(f); updateSettings({ printFormat: f }); }}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold ${format === f ? 'bg-brand-700 text-white' : 'text-slate-600'}`}>
-                {f === 'a4' ? 'A4' : 'Receipt 80mm'}
-              </button>
-            ))}
-          </div>
-          <button type="button" className="btn-secondary" onClick={onPrint}><Icon name="printer" className="h-4 w-4" /> Print</button>
-          <button type="button" className="btn-secondary" onClick={onPdf}><Icon name="download" className="h-4 w-4" /> PDF</button>
           {invoice.status === 'issued' && invoice.totals?.balance > 0 && (
-            <button type="button" className="btn-primary" onClick={() => setPayOpen(true)}><Icon name="wallet" className="h-4 w-4" /> Payment</button>
+            <button type="button" className="btn-primary" onClick={() => setPayOpen(true)}><Icon name="wallet" className="h-4 w-4" />{t('Record payment')}</button>
           )}
           {invoice.status === 'draft' && (
-            <button type="button" className="btn-primary" onClick={onIssueDraft}><Icon name="check" className="h-4 w-4" /> Issue</button>
+            <button type="button" className="btn-primary" onClick={onIssueDraft}><Icon name="check" className="h-4 w-4" />{t('Issue')}</button>
           )}
         </div>
-      </div>
-
-      <div className="mb-4 flex flex-wrap gap-2">
-        {invoice.status !== 'void' && (
-          <Link to={`/invoices/${invoice.id}/edit`} className="btn-ghost btn-sm"><Icon name="edit" className="h-4 w-4" /> Edit</Link>
-        )}
-        <button type="button" className="btn-ghost btn-sm" onClick={onDuplicate}><Icon name="copy" className="h-4 w-4" /> Duplicate</button>
-        {invoice.status === 'issued' && (
-          <button type="button" className="btn-ghost btn-sm text-rose-600" onClick={onVoid}><Icon name="ban" className="h-4 w-4" /> Void</button>
-        )}
-        {invoice.status === 'draft' && (
-          <button type="button" className="btn-ghost btn-sm text-rose-600" onClick={onDelete}><Icon name="trash" className="h-4 w-4" /> Delete draft</button>
-        )}
       </div>
 
       {invoice.status === 'void' && (
-        <div className="mb-4 rounded-lg bg-slate-800 px-4 py-3 text-sm text-white">
-          Voided{invoice.voidReason ? `: ${invoice.voidReason}` : ''}. Stock has been returned.
+        <div className="mb-4 flex items-center gap-2 rounded-2xl bg-slate-800 px-4 py-3 text-sm text-white dark:bg-slate-200 dark:text-slate-900">
+          <Icon name="ban" className="h-4 w-4" />{t('Voided')}{invoice.voidReason ? `: ${invoice.voidReason}` : ''}. {t('Stock has been returned.')}
         </div>
       )}
 
-      {/* On-screen preview (scrolls horizontally on phones). */}
-      <div className="overflow-x-auto rounded-xl bg-slate-200 p-3 sm:p-6">
-        <div className={format === 'thermal' ? 'w-fit mx-auto shadow-lg' : 'w-fit mx-auto origin-top shadow-lg'}>
+      <div className="card mb-4 flex flex-wrap items-center justify-between gap-3 p-3">
+        <Segmented size="sm" value={format} onChange={(f) => { setFormat(f); updateSettings({ printFormat: f }); }}
+          options={[{ value: 'a4', label: 'A4' }, { value: 'thermal', label: t('Receipt 80mm') }]} />
+        <ShareActions invoice={invoice} settings={settings} format={format} />
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-1">
+        {invoice.status !== 'void' && (
+          <Link to={`/invoices/${invoice.id}/edit`} className="btn-ghost btn-sm"><Icon name="edit" className="h-4 w-4" />{t('Edit')}</Link>
+        )}
+        <button type="button" className="btn-ghost btn-sm" onClick={onDuplicate}><Icon name="copy" className="h-4 w-4" />{t('Duplicate')}</button>
+        {invoice.status === 'issued' && (
+          <button type="button" className="btn-ghost btn-sm text-rose-600" onClick={onVoid}><Icon name="ban" className="h-4 w-4" />{t('Void')}</button>
+        )}
+        {invoice.status === 'draft' && (
+          <button type="button" className="btn-ghost btn-sm text-rose-600" onClick={onDelete}><Icon name="trash" className="h-4 w-4" />{t('Delete draft')}</button>
+        )}
+      </div>
+
+      {/* On-screen preview: the paper is scaled down to fit narrow screens. */}
+      <div className="overflow-hidden rounded-2xl bg-subtle p-3 sm:p-6">
+        <PaperPreview format={format}>
           <InvoiceDocument invoice={invoice} settings={settings} format={format} />
-        </div>
+        </PaperPreview>
       </div>
 
       <PrintPortal invoice={invoice} settings={settings} format={format} />
-      <PaymentModal open={payOpen} invoice={invoice} onClose={() => setPayOpen(false)} />
+      <PaymentSheet open={payOpen} invoice={invoice} onClose={() => setPayOpen(false)} />
+    </div>
+  );
+}
+
+/** Scales the fixed-width paper to the available width (no sideways scrolling on phones). */
+function PaperPreview({ format, children }) {
+  const wrap = useRef(null);
+  const inner = useRef(null);
+  const [scale, setScale] = useState(1);
+  const [height, setHeight] = useState('auto');
+  useEffect(() => {
+    const measure = () => {
+      if (!wrap.current || !inner.current) return;
+      const paperW = inner.current.offsetWidth;
+      const s = Math.min(1, wrap.current.clientWidth / paperW);
+      setScale(s);
+      setHeight(`${inner.current.offsetHeight * s}px`);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrap.current);
+    ro.observe(inner.current);
+    return () => ro.disconnect();
+  }, [format]);
+  return (
+    <div ref={wrap} style={{ height }} className="relative">
+      <div ref={inner} className="absolute start-1/2 top-0 w-fit shadow-pop" dir="ltr"
+        style={{ transform: `translateX(-50%) scale(${scale})`, transformOrigin: 'top center' }}>
+        {children}
+      </div>
     </div>
   );
 }

@@ -11,6 +11,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats as F } from 'html5-qrcode';
 import { Icon } from './ui.jsx';
 import { cameraSupported } from '../lib/platform.js';
+import { t, useT } from '../i18n/index.js';
 
 const FORMATS = [
   F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.CODE_93, F.ITF,
@@ -37,10 +38,10 @@ function beep() {
 
 function describeError(err) {
   const msg = String(err?.message || err || '');
-  if (/NotAllowed|Permission/i.test(msg)) return 'Camera permission was denied. Allow camera access in your browser/OS settings and try again.';
-  if (/NotFound|Requested device not found|no camera/i.test(msg)) return 'No camera was found on this device.';
-  if (/NotReadable|in use/i.test(msg)) return 'The camera is being used by another application.';
-  return msg || 'Unable to start the camera.';
+  if (/NotAllowed|Permission/i.test(msg)) return t('Camera permission was denied. Allow camera access in your browser or phone settings and try again.');
+  if (/NotFound|Requested device not found|no camera/i.test(msg)) return t('No camera was found on this device.');
+  if (/NotReadable|in use/i.test(msg)) return t('The camera is being used by another app.');
+  return msg || t('Unable to start the camera.');
 }
 
 export default function BarcodeScanner({ onDetected, continuous = true, lastResult }) {
@@ -48,8 +49,9 @@ export default function BarcodeScanner({ onDetected, continuous = true, lastResu
   const [cameraId, setCameraId] = useState(() => {
     try { return localStorage.getItem(CAMERA_KEY) || ''; } catch { return ''; }
   });
+  const tr = useT();
   const [error, setError] = useState(cameraSupported() ? null
-    : 'Camera access needs a secure connection (HTTPS). Open PureLab via the https:// hub link or the desktop app — or type the code below.');
+    : t('The camera needs a secure (https://) connection. Use the https link or the desktop app — or type the code below.'));
   const [running, setRunning] = useState(false);
   const [torch, setTorch] = useState({ supported: false, on: false });
   const [manual, setManual] = useState('');
@@ -145,12 +147,12 @@ export default function BarcodeScanner({ onDetected, continuous = true, lastResu
 
   return (
     <div className="space-y-3">
-      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-slate-900">
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-slate-900">
         <div id="purelab-scanner" className="h-full w-full" />
         {!running && !error && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-300">
             <Icon name="camera" className="h-8 w-8 animate-pulse" />
-            <span className="text-sm">Starting camera…</span>
+            <span className="text-sm">{tr('Starting camera…')}</span>
           </div>
         )}
         {error && (
@@ -161,8 +163,8 @@ export default function BarcodeScanner({ onDetected, continuous = true, lastResu
         )}
         {running && torch.supported && (
           <button type="button" onClick={toggleTorch}
-            className={`absolute right-3 top-3 rounded-full p-2.5 ${torch.on ? 'bg-amber-400 text-slate-900' : 'bg-black/50 text-white'}`}
-            aria-label="Toggle flashlight">
+            className={`absolute end-3 top-3 rounded-full p-2.5 ${torch.on ? 'bg-amber-400 text-slate-900' : 'bg-black/50 text-white'}`}
+            aria-label={tr('Flashlight')}>
             <Icon name="flash" />
           </button>
         )}
@@ -175,16 +177,16 @@ export default function BarcodeScanner({ onDetected, continuous = true, lastResu
       </div>
 
       {cameras.length > 1 && (
-        <select className="input" value={cameraId} onChange={(e) => switchCamera(e.target.value)} aria-label="Camera">
-          <option value="">Default (rear) camera</option>
+        <select className="input" value={cameraId} onChange={(e) => switchCamera(e.target.value)} aria-label={tr('Camera')}>
+          <option value="">{tr('Default (rear) camera')}</option>
           {cameras.map((c) => <option key={c.id} value={c.id}>{c.label || c.id}</option>)}
         </select>
       )}
 
       <form onSubmit={submitManual} className="flex gap-2">
         <input className="input" value={manual} onChange={(e) => setManual(e.target.value)}
-          placeholder="Or type barcode / SKU and press Enter" inputMode="text" autoComplete="off" />
-        <button type="submit" className="btn-secondary shrink-0">Add</button>
+          placeholder={tr('Or type a barcode / SKU and press Enter')} inputMode="text" autoComplete="off" />
+        <button type="submit" className="btn-secondary shrink-0">{tr('Add')}</button>
       </form>
     </div>
   );

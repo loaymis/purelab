@@ -109,7 +109,8 @@ function createWindow() {
 
   // External links open in the system browser; never spawn new Electron windows.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    // http(s) (incl. WhatsApp wa.me links) and mailto: open in the system apps.
+    if (/^(https?:\/\/|mailto:)/i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
   mainWindow.webContents.on('will-navigate', (event, url) => {

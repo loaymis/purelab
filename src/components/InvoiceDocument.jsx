@@ -1,8 +1,10 @@
 /**
  * Printable invoice in two layouts:
  *   - "a4":      full branded tax invoice (210 × 297 mm)
- *   - "thermal": 80 mm POS receipt (also fine on 58 mm printers when scaled)
- * Used for on-screen preview, browser printing and Electron PDF export.
+ *   - "thermal": 80 mm POS receipt
+ * Language: Settings → Invoicing → Invoice language (app language, English, Arabic,
+ * or bilingual English + Arabic labels). Arabic renders right-to-left.
+ * Used for on-screen preview, printing, PDF export and sharing. Always light (paper).
  */
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -10,8 +12,25 @@ import QRCode from 'qrcode';
 import { money, date, dateTime } from '../lib/format.js';
 import { paymentStatus } from '../lib/calc.js';
 import { PAYMENT_METHODS } from '../lib/settings.js';
+import { translate, getLanguage } from '../i18n/index.js';
+
+/** Label helper for the chosen invoice language. */
+function useLabels(settings) {
+  const mode = settings.invoiceLanguage === 'auto' || !settings.invoiceLanguage ? getLanguage() : settings.invoiceLanguage;
+  const L = (text, vars) => {
+    if (mode === 'bilingual') {
+      const en = translate('en', text, vars);
+      const ar = translate('ar', text, vars);
+      return en === ar ? en : <>{en}<span className="block text-[0.85em] font-normal opacity-80" dir="rtl">{ar}</span></>;
+    }
+    return translate(mode, text, vars);
+  };
+  const Ls = (text, vars) => (mode === 'bilingual' ? `${translate('en', text, vars)} / ${translate('ar', text, vars)}` : translate(mode, text, vars));
+  return { L, Ls, dir: mode === 'ar' ? 'rtl' : 'ltr', lang: mode === 'bilingual' ? 'en' : mode };
+}
 
 const methodLabel = (id) => PAYMENT_METHODS.find((m) => m.id === id)?.label || id;
+const STATUS_TEXT = { paid: 'Paid', partial: 'Partial', unpaid: 'Unpaid', overdue: 'Overdue', draft: 'Draft', void: 'Void' };
 
 function useQr(invoice, company) {
   const [src, setSrc] = useState('');
@@ -30,83 +49,84 @@ function useQr(invoice, company) {
   return src;
 }
 
-function Totals({ t, currency, compact }) {
+function Totals({ t, currency, compact, L }) {
   const row = (label, value, strong) => (
-    <div className={`flex justify-between ${strong ? 'font-bold' : ''} ${compact ? 'py-0.5' : 'py-1'}`}>
-      <span>{label}</span><span>{money(value, currency)}</span>
+    <div className={`flex items-start justify-between gap-4 ${strong ? 'font-bold' : ''} ${compact ? 'py-0.5' : 'py-1'}`}>
+      <span>{label}</span><span className="whitespace-nowrap tabular-nums">{money(value, currency)}</span>
     </div>
   );
   return (
     <div>
-      {row('Subtotal', t.subtotal)}
-      {t.lineDiscounts > 0 && row('Line discounts', -t.lineDiscounts)}
-      {t.invoiceDiscount > 0 && row('Discount', -t.invoiceDiscount)}
+      {row(L('Subtotal'), t.subtotal)}
+      {t.lineDiscounts > 0 && row(L('Line discounts'), -t.lineDiscounts)}
+      {t.invoiceDiscount > 0 && row(L('Discount'), -t.invoiceDiscount)}
       {t.taxBreakdown?.filter((b) => b.rate > 0).map((b) => (
-        <div key={b.rate} className={`flex justify-between ${compact ? 'py-0.5' : 'py-1'}`}>
-          <span>VAT {b.rate}% on {money(b.taxable, currency)}</span><span>{money(b.tax, currency)}</span>
+        <div key={b.rate} className={`flex items-start justify-between gap-4 ${compact ? 'py-0.5' : 'py-1'}`}>
+          <span>{L('VAT {rate}%', { rate: b.rate })}</span><span className="tabular-nums">{money(b.tax, currency)}</span>
         </div>
       ))}
-      <div className={`mt-1 border-t border-current pt-1 ${compact ? 'text-sm' : 'text-lg'}`}>{row('TOTAL', t.grandTotal, true)}</div>
-      {t.paid > 0 && row('Paid', t.paid)}
-      {t.changeDue > 0 && row('Change', t.changeDue)}
-      {t.balance > 0 && row('Balance due', t.balance, true)}
+      <div className={`mt-1 border-t border-current pt-1 ${compact ? 'text-sm' : 'text-lg'}`}>{row(L('Total'), t.grandTotal, true)}</div>
+      {t.paid > 0 && row(L('Paid'), t.paid)}
+      {t.changeDue > 0 && row(L('Change'), t.changeDue)}
+      {t.balance > 0 && row(L('Balance due'), t.balance, true)}
     </div>
   );
 }
 
 function A4Invoice({ invoice, settings, qr }) {
   const { company } = settings;
+  const { L, dir, lang } = useLabels(settings);
   const t = invoice.totals || {};
   const status = paymentStatus(invoice);
   const c = invoice.customer;
   return (
-    <div className="relative mx-auto box-border min-h-[297mm] w-[210mm] bg-white p-[14mm] text-[12px] leading-snug text-slate-800">
+    <div dir={dir} lang={lang} className="relative mx-auto box-border min-h-[297mm] w-[210mm] bg-white p-[14mm] text-start text-[12px] leading-snug text-slate-800">
       {status === 'void' && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span className="-rotate-12 text-[110px] font-black tracking-widest text-rose-500/20">VOID</span>
         </div>
       )}
-      <header className="flex items-start justify-between border-b-4 border-brand-700 pb-5">
+      <header className="flex items-start justify-between gap-6 border-b-4 border-brand-700 pb-5">
         <div className="flex items-center gap-3">
-          <img src="./icon-192.png" alt="" className="h-14 w-14 rounded-xl" />
+          <img src={company.logo || './icon-192.png'} alt="" className="h-16 w-16 rounded-xl object-contain" />
           <div>
             <div className="text-[26px] font-extrabold tracking-tight text-brand-800">{company.name}</div>
-            <div className="text-[11px] uppercase tracking-[0.18em] text-brand-600">{company.tagline}</div>
+            <div className="text-[11px] uppercase tracking-[0.12em] text-brand-600">{company.tagline}</div>
           </div>
         </div>
-        <div className="text-right text-[11px] text-slate-600">
+        <div className="text-end text-[11px] text-slate-600">
           {company.address && <div className="whitespace-pre-line">{company.address}</div>}
-          {company.phone && <div>Tel: {company.phone}</div>}
+          {company.phone && <div dir="ltr">{company.phone}</div>}
           {company.email && <div>{company.email}</div>}
           {company.website && <div>{company.website}</div>}
-          {company.taxId && <div>Tax ID: {company.taxId}</div>}
-          {company.license && <div>Licence: {company.license}</div>}
+          {company.taxId && <div>{L('Tax ID')}: {company.taxId}</div>}
+          {company.license && <div>{L('Licence')}: {company.license}</div>}
         </div>
       </header>
 
       <section className="mt-6 flex justify-between gap-6">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Bill to</div>
+          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{L('Bill to')}</div>
           {c ? (
             <div className="mt-1">
               <div className="text-[14px] font-semibold text-slate-900">{c.name}</div>
               {c.address && <div className="whitespace-pre-line text-slate-600">{c.address}</div>}
-              {c.phone && <div className="text-slate-600">{c.phone}</div>}
+              {c.phone && <div className="text-slate-600" dir="ltr">{c.phone}</div>}
               {c.email && <div className="text-slate-600">{c.email}</div>}
-              {c.taxId && <div className="text-slate-600">Tax ID: {c.taxId}</div>}
+              {c.taxId && <div className="text-slate-600">{L('Tax ID')}: {c.taxId}</div>}
             </div>
-          ) : <div className="mt-1 font-semibold">Walk-in customer</div>}
+          ) : <div className="mt-1 font-semibold">{L('Walk-in customer')}</div>}
         </div>
-        <div className="text-right">
-          <div className="text-[24px] font-bold uppercase tracking-wide text-slate-900">
-            {invoice.status === 'draft' ? 'Draft Invoice' : 'Tax Invoice'}
+        <div className="text-end">
+          <div className="text-[22px] font-bold uppercase tracking-wide text-slate-900">
+            {invoice.status === 'draft' ? L('Draft Invoice') : L('Tax Invoice')}
           </div>
-          <table className="ml-auto mt-2 text-[12px]">
+          <table className="ms-auto mt-2 text-[12px]">
             <tbody>
-              <tr><td className="pr-4 text-slate-500">Invoice #</td><td className="font-semibold">{invoice.number || '—'}</td></tr>
-              <tr><td className="pr-4 text-slate-500">Date</td><td>{date(invoice.date)}</td></tr>
-              {invoice.dueDate && <tr><td className="pr-4 text-slate-500">Due</td><td>{date(invoice.dueDate)}</td></tr>}
-              <tr><td className="pr-4 text-slate-500">Status</td><td className="font-semibold uppercase">{status}</td></tr>
+              <tr><td className="pe-4 text-slate-500">{L('Invoice #')}</td><td className="font-semibold" dir="ltr">{invoice.number || '—'}</td></tr>
+              <tr><td className="pe-4 text-slate-500">{L('Date')}</td><td>{date(invoice.date)}</td></tr>
+              {invoice.dueDate && <tr><td className="pe-4 text-slate-500">{L('Due')}</td><td>{date(invoice.dueDate)}</td></tr>}
+              <tr><td className="pe-4 text-slate-500">{L('Status')}</td><td className="font-semibold uppercase">{L(STATUS_TEXT[status] || status)}</td></tr>
             </tbody>
           </table>
         </div>
@@ -114,15 +134,15 @@ function A4Invoice({ invoice, settings, qr }) {
 
       <table className="mt-6 w-full border-collapse text-[11.5px]">
         <thead>
-          <tr className="bg-brand-700 text-left text-white">
-            <th className="px-2 py-2 font-semibold">#</th>
-            <th className="px-2 py-2 font-semibold">Product</th>
-            <th className="px-2 py-2 font-semibold">Batch / Exp.</th>
-            <th className="px-2 py-2 text-right font-semibold">Qty</th>
-            <th className="px-2 py-2 text-right font-semibold">Unit price</th>
-            <th className="px-2 py-2 text-right font-semibold">Disc.</th>
-            <th className="px-2 py-2 text-right font-semibold">VAT</th>
-            <th className="px-2 py-2 text-right font-semibold">Amount</th>
+          <tr className="bg-brand-700 text-start align-top text-white">
+            <th className="px-2 py-2 text-start font-semibold">#</th>
+            <th className="px-2 py-2 text-start font-semibold">{L('Product')}</th>
+            <th className="px-2 py-2 text-start font-semibold">{L('Batch / Exp.')}</th>
+            <th className="px-2 py-2 text-end font-semibold">{L('Qty')}</th>
+            <th className="px-2 py-2 text-end font-semibold">{L('Unit price')}</th>
+            <th className="px-2 py-2 text-end font-semibold">{L('Disc.')}</th>
+            <th className="px-2 py-2 text-end font-semibold">{L('VAT')}</th>
+            <th className="px-2 py-2 text-end font-semibold">{L('Amount')}</th>
           </tr>
         </thead>
         <tbody>
@@ -131,16 +151,16 @@ function A4Invoice({ invoice, settings, qr }) {
               <td className="px-2 py-1.5 align-top text-slate-500">{i + 1}</td>
               <td className="px-2 py-1.5 align-top">
                 <div className="font-medium text-slate-900">{it.name}</div>
-                <div className="text-[10px] text-slate-500">{it.sku}</div>
+                <div className="text-[10px] text-slate-500" dir="ltr">{it.sku}</div>
               </td>
               <td className="px-2 py-1.5 align-top text-[10.5px]">
                 {it.batchNumber || '—'}{it.expiryDate ? <div className="text-slate-500">{it.expiryDate}</div> : null}
               </td>
-              <td className="px-2 py-1.5 text-right align-top">{it.qty}</td>
-              <td className="px-2 py-1.5 text-right align-top">{money(it.price, invoice.currency)}</td>
-              <td className="px-2 py-1.5 text-right align-top">{it.discountPct ? `${it.discountPct}%` : '—'}</td>
-              <td className="px-2 py-1.5 text-right align-top">{it.taxRate ? `${it.taxRate}%` : '—'}</td>
-              <td className="px-2 py-1.5 text-right align-top font-medium">{money(t.lineTotals?.[i] ?? 0, invoice.currency)}</td>
+              <td className="px-2 py-1.5 text-end align-top">{it.qty}</td>
+              <td className="px-2 py-1.5 text-end align-top">{money(it.price, invoice.currency)}</td>
+              <td className="px-2 py-1.5 text-end align-top">{Number(it.discountPct) ? `${it.discountPct}%` : '—'}</td>
+              <td className="px-2 py-1.5 text-end align-top">{Number(it.taxRate) ? `${it.taxRate}%` : '—'}</td>
+              <td className="px-2 py-1.5 text-end align-top font-medium">{money(t.lineTotals?.[i] ?? 0, invoice.currency)}</td>
             </tr>
           ))}
         </tbody>
@@ -150,40 +170,40 @@ function A4Invoice({ invoice, settings, qr }) {
         <div className="max-w-[95mm] space-y-3 text-[11px] text-slate-600">
           {invoice.payments?.length > 0 && (
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Payments</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{L('Payments')}</div>
               {invoice.payments.map((p) => (
                 <div key={p.id}>
-                  {date(p.date)} · {methodLabel(p.method)} · {money(p.amount, invoice.currency)}
-                  {p.reference ? <span className="break-all"> · Ref: {p.reference}</span> : null}
+                  {date(p.date)} · {L(methodLabel(p.method))} · {money(p.amount, invoice.currency)}
+                  {p.reference ? <span className="break-all"> · {L('Ref')}: {p.reference}</span> : null}
                 </div>
               ))}
             </div>
           )}
           {settings.bankDetails && (
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Bank transfer</div>
-              <div className="whitespace-pre-line">{settings.bankDetails}</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{L('Bank transfer')}</div>
+              <div className="whitespace-pre-line" dir="ltr">{settings.bankDetails}</div>
             </div>
           )}
           {settings.usdtWallet && (
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">USDT wallet</div>
-              <div className="break-all font-mono">{settings.usdtWallet}</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{L('USDT wallet')}</div>
+              <div className="break-all font-mono" dir="ltr">{settings.usdtWallet}</div>
             </div>
           )}
           {invoice.notes && (
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Notes</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{L('Notes')}</div>
               <div className="whitespace-pre-line">{invoice.notes}</div>
             </div>
           )}
         </div>
-        <div className="w-[78mm] text-[12px]"><Totals t={t} currency={invoice.currency} /></div>
+        <div className="w-[80mm] text-[12px]"><Totals t={t} currency={invoice.currency} L={L} /></div>
       </section>
 
-      <footer className="absolute inset-x-[14mm] bottom-[12mm] flex items-end justify-between border-t border-slate-200 pt-3 text-[10px] text-slate-500">
+      <footer className="absolute inset-x-[14mm] bottom-[12mm] flex items-end justify-between gap-6 border-t border-slate-200 pt-3 text-[10px] text-slate-500">
         <div className="max-w-[140mm] whitespace-pre-line">{settings.invoiceFooter}</div>
-        {qr && <img src={qr} alt="Invoice verification QR" className="h-[22mm] w-[22mm]" />}
+        {qr && <img src={qr} alt="" className="h-[22mm] w-[22mm]" />}
       </footer>
     </div>
   );
@@ -191,40 +211,42 @@ function A4Invoice({ invoice, settings, qr }) {
 
 function ThermalReceipt({ invoice, settings, qr }) {
   const { company } = settings;
+  const { L, Ls, dir, lang } = useLabels(settings);
   const t = invoice.totals || {};
   return (
-    <div className="mx-auto box-border w-[80mm] bg-white p-[4mm] font-mono text-[11px] leading-tight text-black">
+    <div dir={dir} lang={lang} className="mx-auto box-border w-[80mm] bg-white p-[4mm] text-start font-mono text-[11px] leading-tight text-black">
       <div className="text-center">
+        {company.logo && <img src={company.logo} alt="" className="mx-auto mb-1 h-12 w-12 object-contain grayscale" />}
         <div className="text-[18px] font-extrabold tracking-wide">{company.name}</div>
         <div className="text-[9px] uppercase">{company.tagline}</div>
         {company.address && <div className="mt-1 whitespace-pre-line">{company.address}</div>}
-        {company.phone && <div>Tel {company.phone}</div>}
-        {company.taxId && <div>Tax ID {company.taxId}</div>}
+        {company.phone && <div dir="ltr">{company.phone}</div>}
+        {company.taxId && <div>{Ls('Tax ID')} {company.taxId}</div>}
       </div>
       <div className="my-2 border-t border-dashed border-black" />
-      <div className="flex justify-between"><span>{invoice.status === 'draft' ? 'DRAFT' : 'INVOICE'}</span><span>{invoice.number}</span></div>
+      <div className="flex justify-between gap-2"><span>{invoice.status === 'draft' ? L('Draft') : L('Invoice')}</span><span dir="ltr">{invoice.number}</span></div>
       <div>{dateTime(invoice.issuedAt || invoice.created_at || Date.now())}</div>
-      {invoice.customer && <div>Customer: {invoice.customer.name}</div>}
+      {invoice.customer && <div>{Ls('Customer')}: {invoice.customer.name}</div>}
       {invoice.status === 'void' && <div className="my-1 text-center text-[14px] font-bold">*** VOID ***</div>}
       <div className="my-2 border-t border-dashed border-black" />
       {invoice.items.map((it, i) => (
         <div key={it.key || i} className="mb-1">
           <div className="break-words">{it.name}</div>
-          <div className="flex justify-between">
-            <span>{it.qty} x {money(it.price, invoice.currency)}{it.discountPct ? ` -${it.discountPct}%` : ''}</span>
+          <div className="flex justify-between gap-2">
+            <span>{it.qty} × {money(it.price, invoice.currency)}{Number(it.discountPct) ? ` −${it.discountPct}%` : ''}</span>
             <span>{money(t.lineTotals?.[i] ?? 0, invoice.currency)}</span>
           </div>
-          {it.batchNumber && <div className="text-[9px]">Batch {it.batchNumber}{it.expiryDate ? ` Exp ${it.expiryDate}` : ''}</div>}
+          {it.batchNumber && <div className="text-[9px]">{Ls('Batch')} {it.batchNumber}{it.expiryDate ? ` · ${Ls('Exp')} ${it.expiryDate}` : ''}</div>}
         </div>
       ))}
       <div className="my-2 border-t border-dashed border-black" />
-      <Totals t={t} currency={invoice.currency} compact />
+      <Totals t={t} currency={invoice.currency} compact L={L} />
       {invoice.payments?.length > 0 && (
         <>
           <div className="my-2 border-t border-dashed border-black" />
           {invoice.payments.map((p) => (
-            <div key={p.id} className="flex justify-between">
-              <span>{methodLabel(p.method)}</span><span>{money(p.amount, invoice.currency)}</span>
+            <div key={p.id} className="flex justify-between gap-2">
+              <span>{Ls(methodLabel(p.method))}</span><span>{money(p.amount, invoice.currency)}</span>
             </div>
           ))}
         </>
@@ -232,7 +254,7 @@ function ThermalReceipt({ invoice, settings, qr }) {
       <div className="my-2 border-t border-dashed border-black" />
       <div className="whitespace-pre-line text-center text-[9px]">{settings.invoiceFooter}</div>
       {qr && <img src={qr} alt="" className="mx-auto mt-2 h-[26mm] w-[26mm]" />}
-      <div className="mt-1 text-center text-[9px]">Items: {t.itemCount}</div>
+      <div className="mt-1 text-center text-[9px]">{Ls('Items')}: {t.itemCount}</div>
     </div>
   );
 }
@@ -244,7 +266,7 @@ export default function InvoiceDocument({ invoice, settings, format = 'a4' }) {
     : <A4Invoice invoice={invoice} settings={settings} qr={qr} />;
 }
 
-/** Renders the document into #print-root (outside the app) for printing/PDF. */
+/** Renders the document into #print-root (outside the app) for printing / PDF / sharing. */
 export function PrintPortal({ invoice, settings, format }) {
   const [el] = useState(() => {
     let node = document.getElementById('print-root');

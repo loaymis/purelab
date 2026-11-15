@@ -1,91 +1,101 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Icon, PageHeader, EmptyState, StatusBadge } from '../components/ui.jsx';
+import { Icon, PageHeader, EmptyState, StatusBadge, ListSkeleton, Fab } from '../components/ui.jsx';
 import { useInvoices } from '../db/hooks.js';
 import { paymentStatus } from '../lib/calc.js';
 import { money, date } from '../lib/format.js';
+import { useT } from '../i18n/index.js';
 
-const FILTERS = ['all', 'unpaid', 'partial', 'overdue', 'paid', 'draft', 'void'];
+const FILTERS = [
+  ['all', 'All'], ['unpaid', 'Unpaid'], ['partial', 'Partial'], ['overdue', 'Overdue'],
+  ['paid', 'Paid'], ['draft', 'Draft'], ['void', 'Void'],
+];
 
 export default function Invoices() {
+  const t = useT();
   const invoices = useInvoices();
   const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
 
+  const withStatus = useMemo(() => (invoices || []).map((inv) => ({ ...inv, _status: paymentStatus(inv) })), [invoices]);
+  const counts = useMemo(() => withStatus.reduce((m, i) => ({ ...m, [i._status]: (m[i._status] || 0) + 1 }), {}), [withStatus]);
   const rows = useMemo(() => {
-    if (!invoices) return [];
     const needle = q.trim().toLowerCase();
-    return invoices
-      .map((inv) => ({ ...inv, _status: paymentStatus(inv) }))
+    return withStatus
       .filter((inv) => filter === 'all' || inv._status === filter)
       .filter((inv) => !needle || [inv.number, inv.customer?.name, inv.customer?.phone, ...(inv.items || []).map((i) => i.name)]
         .some((v) => String(v || '').toLowerCase().includes(needle)));
-  }, [invoices, q, filter]);
+  }, [withStatus, q, filter]);
+  const shownTotal = rows.filter((r) => r.status === 'issued').reduce((s, r) => s + (r.totals?.grandTotal || 0), 0);
 
   return (
     <div>
-      <PageHeader title="Invoices" subtitle={invoices ? `${invoices.length} total` : ''}
-        actions={<Link to="/pos" className="btn-primary"><Icon name="plus" className="h-4 w-4" /> New sale</Link>} />
+      <PageHeader title={t('Invoices')} subtitle={invoices ? t('{n} invoices · {amount}', { n: rows.length, amount: money(shownTotal) }) : ''}
+        actions={<Link to="/pos" className="btn-primary hidden lg:inline-flex"><Icon name="plus" className="h-4 w-4" />{t('New sale')}</Link>} />
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-        <div className="relative flex-1">
-          <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input className="input pl-9" placeholder="Search number, customer, product…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="sticky top-[57px] z-10 -mx-4 mb-4 space-y-3 bg-canvas/95 px-4 py-2 backdrop-blur-lg lg:top-0 lg:mx-0 lg:px-0">
+        <div className="relative">
+          <Icon name="search" className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
+          <input className="input ps-9" placeholder={t('Search number, customer, product…')} value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <div className="flex gap-1 overflow-x-auto">
-          {FILTERS.map((f) => (
-            <button key={f} type="button" onClick={() => setFilter(f)}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold capitalize ${filter === f ? 'bg-brand-700 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200'}`}>
-              {f}
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+          {FILTERS.map(([id, label]) => (
+            <button key={id} type="button" onClick={() => setFilter(id)} className={`chip ${filter === id ? 'chip-active' : ''}`}>
+              {t(label)}{id !== 'all' && counts[id] ? <span className="opacity-70">{counts[id]}</span> : null}
             </button>
           ))}
         </div>
       </div>
 
       <div className="card overflow-hidden">
-        {invoices === undefined ? <div className="p-8 text-center text-slate-500">Loading…</div>
-          : rows.length === 0 ? <EmptyState icon="invoice" title="No invoices found" text="Create your first sale from the New Sale screen." />
-            : (
-              <>
-                {/* Desktop table */}
-                <table className="hidden w-full md:table">
-                  <thead className="border-b border-slate-200 bg-slate-50">
-                    <tr>
-                      <th className="table-th">Number</th><th className="table-th">Date</th><th className="table-th">Customer</th>
-                      <th className="table-th">Status</th><th className="table-th text-right">Total</th><th className="table-th text-right">Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {rows.map((inv) => (
-                      <tr key={inv.id} className="cursor-pointer hover:bg-slate-50" onClick={() => navigate(`/invoices/${inv.id}`)}>
-                        <td className="table-td font-semibold text-slate-900">{inv.number}</td>
-                        <td className="table-td">{date(inv.date)}</td>
-                        <td className="table-td">{inv.customer?.name || 'Walk-in'}</td>
-                        <td className="table-td"><StatusBadge status={inv._status} /></td>
-                        <td className="table-td text-right font-medium">{money(inv.totals?.grandTotal)}</td>
-                        <td className="table-td text-right">{inv.status === 'issued' && inv.totals?.balance > 0 ? money(inv.totals.balance) : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {/* Mobile cards */}
-                <ul className="divide-y divide-slate-100 md:hidden">
+        {invoices === undefined ? <ListSkeleton />
+          : rows.length === 0 ? (
+            <EmptyState icon="invoice" title={invoices.length ? t('No invoices match') : t('No invoices yet')}
+              text={invoices.length ? t('Try another search or filter.') : t('Your sales will appear here.')}
+              action={!invoices.length && <Link to="/pos" className="btn-primary">{t('Make your first sale')}</Link>} />
+          ) : (
+            <>
+              <table className="hidden w-full md:table">
+                <thead className="border-b border-line bg-subtle/60">
+                  <tr>
+                    <th className="table-th">{t('Number')}</th><th className="table-th">{t('Date')}</th><th className="table-th">{t('Customer')}</th>
+                    <th className="table-th">{t('Status')}</th><th className="table-th text-end">{t('Total')}</th><th className="table-th text-end">{t('Balance')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
                   {rows.map((inv) => (
-                    <li key={inv.id}>
-                      <Link to={`/invoices/${inv.id}`} className="flex items-center justify-between gap-3 p-4">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2"><span className="font-semibold">{inv.number}</span><StatusBadge status={inv._status} /></div>
-                          <div className="truncate text-sm text-slate-500">{inv.customer?.name || 'Walk-in'} · {date(inv.date)}</div>
-                        </div>
-                        <div className="text-right font-bold">{money(inv.totals?.grandTotal)}</div>
-                      </Link>
-                    </li>
+                    <tr key={inv.id} className="cursor-pointer transition hover:bg-subtle" onClick={() => navigate(`/invoices/${inv.id}`)}>
+                      <td className="table-td font-semibold" dir="ltr">{inv.number}</td>
+                      <td className="table-td text-muted">{date(inv.date)}</td>
+                      <td className="table-td">{inv.customer?.name || <span className="text-muted">{t('Walk-in customer')}</span>}</td>
+                      <td className="table-td"><StatusBadge status={inv._status} /></td>
+                      <td className="table-td text-end font-semibold tabular-nums">{money(inv.totals?.grandTotal)}</td>
+                      <td className="table-td text-end tabular-nums">{inv.status === 'issued' && inv.totals?.balance > 0 ? <span className="font-semibold text-amber-600">{money(inv.totals.balance)}</span> : <span className="text-faint">—</span>}</td>
+                    </tr>
                   ))}
-                </ul>
-              </>
-            )}
+                </tbody>
+              </table>
+              <ul className="divide-y divide-line md:hidden">
+                {rows.map((inv) => (
+                  <li key={inv.id}>
+                    <Link to={`/invoices/${inv.id}`} className="flex items-center justify-between gap-3 p-4 active:bg-subtle">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2"><span className="font-semibold text-ink" dir="ltr">{inv.number}</span><StatusBadge status={inv._status} /></div>
+                        <div className="truncate text-sm text-muted">{inv.customer?.name || t('Walk-in customer')} · {date(inv.date)}</div>
+                      </div>
+                      <div className="text-end">
+                        <div className="font-bold tabular-nums text-ink">{money(inv.totals?.grandTotal)}</div>
+                        {inv.status === 'issued' && inv.totals?.balance > 0 && <div className="text-xs font-semibold text-amber-600">{t('{amount} due', { amount: money(inv.totals.balance) })}</div>}
+                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
       </div>
+      <Fab label={t('New sale')} icon="scan" onClick={() => navigate('/pos')} />
     </div>
   );
 }

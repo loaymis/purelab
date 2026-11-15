@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { syncEngine } from './sync/engine.js';
+import './lib/install.js'; // capture the PWA install prompt as early as possible
 import { isDesktop } from './lib/platform.js';
 import './index.css';
 

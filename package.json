@@ -1,8 +1,8 @@
 {
   "name": "purelab",
   "productName": "PureLab",
-  "version": "1.1.0",
-  "description": "PureLab — offline-first invoicing & POS for pharmaceutical and dermo-cosmetic sales",
+  "version": "1.2.0",
+  "description": "PureLab \u2014 offline-first invoicing & POS for pharmaceutical and dermo-cosmetic sales",
   "author": "PureLab",
   "license": "UNLICENSED",
   "repository": {
@@ -20,12 +20,13 @@
     "dist:win": "npm run build:web && electron-builder --win --x64",
     "dist:dir": "npm run build:web && electron-builder --dir",
     "test": "node --test tests/*.test.js",
-    "test:rules": "npx -y firebase-tools@14 emulators:exec --only firestore --project demo-purelab \"node --test tests/rules/*.spec.js\""
+    "test:rules": "npx -y firebase-tools@14 emulators:exec --only firestore --project demo-purelab \"node --test tests/rules/*.spec.js\"",
+    "i18n:check": "node scripts/i18n-check.mjs --list"
   },
   "build": {
     "appId": "com.purelab.pos",
     "productName": "PureLab",
-    "copyright": "Copyright © PureLab",
+    "copyright": "Copyright \u00a9 PureLab",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -74,6 +75,8 @@
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource/ibm-plex-sans-arabic": "^5.3.0",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.6.2",
     "concurrently": "^9.2.5",
@@ -83,7 +86,9 @@
     "electron": "^38.8.6",
     "electron-builder": "^26.18.0",
     "firebase": "^12.19.0",
+    "html-to-image": "^1.11.13",
     "html5-qrcode": "^2.3.8",
+    "jspdf": "^4.2.1",
     "postcss": "^8.5.33",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
